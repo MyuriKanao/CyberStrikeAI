@@ -574,78 +574,73 @@ func RunDeepAgent(
 	}, baseMsgs)
 }
 
+func chatToolCallsToSchema(tcs []agent.ToolCall) []schema.ToolCall {
+	if len(tcs) == 0 {
+		return nil
+	}
+	out := make([]schema.ToolCall, 0, len(tcs))
+	for _, tc := range tcs {
+		if strings.TrimSpace(tc.ID) == "" {
+			continue
+		}
+		argsStr := ""
+		if tc.Function.Arguments != nil {
+			b, err := json.Marshal(tc.Function.Arguments)
+			if err == nil {
+				argsStr = string(b)
+			}
+		}
+		typ := tc.Type
+		if typ == "" {
+			typ = "function"
+		}
+		out = append(out, schema.ToolCall{
+			ID:   tc.ID,
+			Type: typ,
+			Function: schema.FunctionCall{
+				Name:      tc.Function.Name,
+				Arguments: argsStr,
+			},
+		})
+	}
+	return out
+}
+
+// historyToMessages 将轨迹恢复的 ChatMessage 转为 Eino ADK 消息：**不裁剪条数、不按 token 预算截断**，
+// 并保留 user / assistant（含仅 tool_calls）/ tool，与库中 last_react 轨迹一致。
 func historyToMessages(history []agent.ChatMessage, appCfg *config.Config, mwCfg *config.MultiAgentEinoMiddlewareConfig) []adk.Message {
+	_ = appCfg
+	_ = mwCfg
 	if len(history) == 0 {
 		return nil
 	}
-	// Keep a bounded tail first; then enforce a token budget.
-	const maxHistoryMessages = 200
-	start := 0
-	if len(history) > maxHistoryMessages {
-		start = len(history) - maxHistoryMessages
-	}
-	raw := make([]adk.Message, 0, len(history[start:]))
-	for _, h := range history[start:] {
-		switch h.Role {
+	raw := make([]adk.Message, 0, len(history))
+	for _, h := range history {
+		role := strings.ToLower(strings.TrimSpace(h.Role))
+		switch role {
 		case "user":
 			if strings.TrimSpace(h.Content) != "" {
 				raw = append(raw, schema.UserMessage(h.Content))
 			}
 		case "assistant":
-			if strings.TrimSpace(h.Content) == "" && len(h.ToolCalls) > 0 {
+			toolSchema := chatToolCallsToSchema(h.ToolCalls)
+			if len(toolSchema) > 0 || strings.TrimSpace(h.Content) != "" {
+				raw = append(raw, schema.AssistantMessage(h.Content, toolSchema))
+			}
+		case "tool":
+			if strings.TrimSpace(h.ToolCallID) == "" && strings.TrimSpace(h.Content) == "" {
 				continue
 			}
-			if strings.TrimSpace(h.Content) != "" {
-				raw = append(raw, schema.AssistantMessage(h.Content, nil))
+			var opts []schema.ToolMessageOption
+			if tn := strings.TrimSpace(h.ToolName); tn != "" {
+				opts = append(opts, schema.WithToolName(tn))
 			}
+			raw = append(raw, schema.ToolMessage(h.Content, h.ToolCallID, opts...))
 		default:
 			continue
 		}
 	}
-	if len(raw) == 0 {
-		return raw
-	}
-	maxTotal := 120000
-	modelName := "gpt-4o"
-	if appCfg != nil {
-		if appCfg.OpenAI.MaxTotalTokens > 0 {
-			maxTotal = appCfg.OpenAI.MaxTotalTokens
-		}
-		if m := strings.TrimSpace(appCfg.OpenAI.Model); m != "" {
-			modelName = m
-		}
-	}
-	ratio := 0.35
-	if mwCfg != nil {
-		ratio = mwCfg.HistoryInputBudgetRatioEffective()
-	}
-	budget := int(float64(maxTotal) * ratio)
-	if budget < 4096 {
-		budget = 4096
-	}
-	tc := agent.NewTikTokenCounter()
-	outRev := make([]adk.Message, 0, len(raw))
-	used := 0
-	for i := len(raw) - 1; i >= 0; i-- {
-		msg := raw[i]
-		n, err := tc.Count(modelName, string(msg.Role)+"\n"+msg.Content)
-		if err != nil {
-			n = (len(msg.Content) + 3) / 4
-		}
-		if n <= 0 {
-			n = 1
-		}
-		if used+n > budget {
-			break
-		}
-		used += n
-		outRev = append(outRev, msg)
-	}
-	out := make([]adk.Message, 0, len(outRev))
-	for i := len(outRev) - 1; i >= 0; i-- {
-		out = append(out, outRev[i])
-	}
-	return out
+	return raw
 }
 
 // mergeStreamingToolCallFragments 将流式多帧的 ToolCall 按 index 合并 arguments（与 schema.concatToolCalls 行为一致）。

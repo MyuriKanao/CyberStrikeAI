@@ -193,6 +193,8 @@ type ChatMessage struct {
 	Content    string     `json:"content,omitempty"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
+	// ToolName 仅 tool 角色：从 Eino/轨迹 JSON 的 name 或 tool_name 恢复，供续跑构造 ToolMessage。
+	ToolName string `json:"tool_name,omitempty"`
 }
 
 // MarshalJSON 自定义JSON序列化，将tool_calls中的arguments转换为JSON字符串
@@ -210,6 +212,9 @@ func (cm ChatMessage) MarshalJSON() ([]byte, error) {
 	// 添加tool_call_id（如果存在）
 	if cm.ToolCallID != "" {
 		aux["tool_call_id"] = cm.ToolCallID
+	}
+	if cm.ToolName != "" {
+		aux["tool_name"] = cm.ToolName
 	}
 
 	// 转换tool_calls，将arguments转换为JSON字符串
@@ -438,6 +443,7 @@ func (a *Agent) AgentLoopWithProgress(ctx context.Context, userInput string, his
 				Content:    msg.Content,
 				ToolCalls:  msg.ToolCalls,
 				ToolCallID: msg.ToolCallID,
+				ToolName:   msg.ToolName,
 			})
 			addedCount++
 			contentPreview := msg.Content
