@@ -19,7 +19,7 @@ import (
 // postRetrieveMaxPrefetchCap 限制单次向量候选上限，避免误配置导致全表扫压力过大。
 const postRetrieveMaxPrefetchCap = 200
 
-// DocumentReranker 可选重排（如交叉编码器 / 第三方 Rerank API），由 [Retriever.SetDocumentReranker] 注入；失败时在适配层降级为向量序。
+// DocumentReranker 可选重排（如交叉编码器 / 第三方 Rerank API），可由配置创建或 [Retriever.SetDocumentReranker] 注入；失败时在适配层降级为向量序。
 type DocumentReranker interface {
 	Rerank(ctx context.Context, query string, docs []*schema.Document) ([]*schema.Document, error)
 }

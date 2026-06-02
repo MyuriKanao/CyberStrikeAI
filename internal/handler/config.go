@@ -1218,6 +1218,7 @@ func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 			SimilarityThreshold: h.config.Knowledge.Retrieval.SimilarityThreshold,
 			SubIndexFilter:      h.config.Knowledge.Retrieval.SubIndexFilter,
 			PostRetrieve:        h.config.Knowledge.Retrieval.PostRetrieve,
+			Rerank:              knowledge.EffectiveRerankConfig(h.config.Knowledge.Retrieval.Rerank, &h.config.OpenAI),
 		}
 		h.retrieverUpdater.UpdateConfig(retrievalConfig)
 		h.logger.Info("检索器配置已更新",
@@ -1467,6 +1468,14 @@ func updateKnowledgeConfig(doc *yaml.Node, cfg config.KnowledgeConfig) {
 	setIntInMap(postNode, "prefetch_top_k", cfg.Retrieval.PostRetrieve.PrefetchTopK)
 	setIntInMap(postNode, "max_context_chars", cfg.Retrieval.PostRetrieve.MaxContextChars)
 	setIntInMap(postNode, "max_context_tokens", cfg.Retrieval.PostRetrieve.MaxContextTokens)
+	rerankNode := ensureMap(retrievalNode, "rerank")
+	setBoolInMap(rerankNode, "enabled", cfg.Retrieval.Rerank.Enabled)
+	setStringInMap(rerankNode, "provider", cfg.Retrieval.Rerank.Provider)
+	setStringInMap(rerankNode, "model", cfg.Retrieval.Rerank.Model)
+	setStringInMap(rerankNode, "base_url", cfg.Retrieval.Rerank.BaseURL)
+	setStringInMap(rerankNode, "api_key", cfg.Retrieval.Rerank.APIKey)
+	setIntInMap(rerankNode, "top_n", cfg.Retrieval.Rerank.TopN)
+	setIntInMap(rerankNode, "request_timeout_seconds", cfg.Retrieval.Rerank.RequestTimeoutSeconds)
 
 	// 更新索引配置
 	indexingNode := ensureMap(knowledgeNode, "indexing")

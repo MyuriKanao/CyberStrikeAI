@@ -36,16 +36,18 @@ type RetrievalConfig struct {
 	// SubIndexFilter 非空时仅检索 sub_indexes 包含该标签（逗号分隔之一）的行；空 sub_indexes 的旧行仍保留以兼容。
 	SubIndexFilter string
 	PostRetrieve   config.PostRetrieveConfig
+	Rerank         config.RerankConfig
 }
 
 // NewRetriever 创建新的检索器
 func NewRetriever(db *sql.DB, embedder *Embedder, config *RetrievalConfig, logger *zap.Logger) *Retriever {
-	return &Retriever{
+	r := &Retriever{
 		db:       db,
 		embedder: embedder,
-		config:   config,
 		logger:   logger,
 	}
+	r.UpdateConfig(config)
+	return r
 }
 
 // UpdateConfig 更新检索配置
@@ -60,9 +62,28 @@ func (r *Retriever) UpdateConfig(cfg *RetrievalConfig) {
 				zap.Int("post_retrieve_prefetch_top_k", cfg.PostRetrieve.PrefetchTopK),
 				zap.Int("post_retrieve_max_context_chars", cfg.PostRetrieve.MaxContextChars),
 				zap.Int("post_retrieve_max_context_tokens", cfg.PostRetrieve.MaxContextTokens),
+				zap.Bool("rerank_enabled", cfg.Rerank.Enabled),
+				zap.String("rerank_provider", cfg.Rerank.Provider),
+				zap.String("rerank_model", cfg.Rerank.Model),
 			)
 		}
+		r.configureDocumentReranker(cfg.Rerank)
 	}
+}
+
+func (r *Retriever) configureDocumentReranker(cfg config.RerankConfig) {
+	if r == nil {
+		return
+	}
+	rr, err := NewHTTPDocumentReranker(cfg, r.logger)
+	if err != nil {
+		r.SetDocumentReranker(nil)
+		if r.logger != nil {
+			r.logger.Warn("知识检索重排器配置无效，已禁用重排", zap.Error(err))
+		}
+		return
+	}
+	r.SetDocumentReranker(rr)
 }
 
 // SetDocumentReranker 注入可选重排器（并发安全）；nil 表示禁用。

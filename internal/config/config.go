@@ -1381,14 +1381,27 @@ type PostRetrieveConfig struct {
 	MaxContextTokens int `yaml:"max_context_tokens,omitempty" json:"max_context_tokens,omitempty"`
 }
 
+// RerankConfig 重排模型配置；使用兼容 /rerank 的 HTTP API（Jina / Cohere / SiliconFlow 等常见格式）。
+type RerankConfig struct {
+	Enabled               bool   `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Provider              string `yaml:"provider,omitempty" json:"provider,omitempty"`
+	Model                 string `yaml:"model,omitempty" json:"model,omitempty"`
+	BaseURL               string `yaml:"base_url,omitempty" json:"base_url,omitempty"`
+	APIKey                string `yaml:"api_key,omitempty" json:"api_key,omitempty"`
+	TopN                  int    `yaml:"top_n,omitempty" json:"top_n,omitempty"`
+	RequestTimeoutSeconds int    `yaml:"request_timeout_seconds,omitempty" json:"request_timeout_seconds,omitempty"`
+}
+
 // RetrievalConfig 检索配置
 type RetrievalConfig struct {
 	TopK                int     `yaml:"top_k" json:"top_k"`                               // 检索Top-K
 	SimilarityThreshold float64 `yaml:"similarity_threshold" json:"similarity_threshold"` // 余弦相似度阈值
 	// SubIndexFilter 非空时仅保留 sub_indexes 含该标签（逗号分隔之一）的行；sub_indexes 为空的旧行仍返回。
 	SubIndexFilter string `yaml:"sub_index_filter,omitempty" json:"sub_index_filter,omitempty"`
-	// PostRetrieve 检索后处理（去重、预算截断）；重排通过代码注入 [knowledge.DocumentReranker]。
+	// PostRetrieve 检索后处理（去重、预算截断）。
 	PostRetrieve PostRetrieveConfig `yaml:"post_retrieve,omitempty" json:"post_retrieve,omitempty"`
+	// Rerank 可选重排模型配置。未启用时保持纯向量余弦排序；也可通过代码注入自定义 [knowledge.DocumentReranker]。
+	Rerank RerankConfig `yaml:"rerank,omitempty" json:"rerank,omitempty"`
 }
 
 // RolesConfig 角色配置（已废弃，使用 map[string]RoleConfig 替代）

@@ -446,6 +446,7 @@ CyberStrikeAI 支持通过三种传输模式连接外部 MCP 服务器：
 ### 知识库功能
 - **向量检索**：AI 智能体在对话过程中可自动调用 `search_knowledge_base` 工具搜索知识库中的安全知识。
 - **向量检索**：基于嵌入余弦相似度与相似度阈值过滤（与 Eino `retriever.Retriever` 语义一致）。
+- **可选重排**：可配置兼容 `/rerank` 的 HTTP 重排模型（如 Jina / Cohere / SiliconFlow 等同类接口），对向量召回候选重新排序；失败时自动回退向量顺序。
 - **自动索引**：扫描 `knowledge_base/` 目录下的 Markdown 文件，自动构建向量嵌入索引。
 - **Web 管理**：通过 Web 界面创建、更新、删除知识项，支持分类管理。
 - **检索日志**：记录所有知识检索操作，便于审计与调试。
@@ -469,6 +470,14 @@ CyberStrikeAI 支持通过三种传输模式连接外部 MCP 服务器：
      retrieval:
        top_k: 5
        similarity_threshold: 0.7
+       rerank:
+         enabled: false
+         provider: openai_compatible
+         model: bge-reranker-v2-m3
+         base_url: "https://api.example.com/v1"  # 留空则使用 openai.base_url
+         api_key: "sk-xxx"                       # 留空则使用 openai.api_key
+         top_n: 0                                # 0 表示重排全部预取候选
+         request_timeout_seconds: 60
    ```
 2. **添加知识文件**：将 Markdown 文件放入 `knowledge_base/` 目录，按分类组织（如 `knowledge_base/SQL注入/README.md`）。
 3. **扫描索引**：在 Web 界面中点击"扫描知识库"，系统会自动导入文件并构建向量索引。

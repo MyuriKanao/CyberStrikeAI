@@ -448,6 +448,7 @@ A test SSE MCP server is available at `cmd/test-sse-mcp-server/` for validation 
 ### Knowledge Base
 - **Vector search** – AI agent can automatically search the knowledge base for relevant security knowledge during conversations using the `search_knowledge_base` tool.
 - **Vector retrieval** – cosine similarity over stored embeddings, aligned with Eino `retriever.Retriever` usage.
+- **Optional rerank** – configure an HTTP `/rerank` model endpoint (Jina / Cohere / SiliconFlow-style APIs) to reorder vector candidates; failures fall back to vector order.
 - **Auto-indexing** – scans the `knowledge_base/` directory for Markdown files and automatically indexes them with embeddings.
 - **Web management** – create, update, delete knowledge items through the web UI, with category-based organization.
 - **Retrieval logs** – tracks all knowledge retrieval operations for audit and debugging.
@@ -471,6 +472,14 @@ A test SSE MCP server is available at `cmd/test-sse-mcp-server/` for validation 
      retrieval:
        top_k: 5
        similarity_threshold: 0.7
+       rerank:
+         enabled: false
+         provider: openai_compatible
+         model: bge-reranker-v2-m3
+         base_url: "https://api.example.com/v1"  # empty uses openai.base_url
+         api_key: "sk-xxx"                       # empty uses openai.api_key
+         top_n: 0                                # 0 reranks all prefetched candidates
+         request_timeout_seconds: 60
    ```
 2. **Add knowledge files** – place Markdown files in `knowledge_base/` directory, organized by category (e.g., `knowledge_base/SQL Injection/README.md`).
 3. **Scan and index** – use the web UI to scan the knowledge base directory, which will automatically import files and build vector embeddings.
@@ -670,5 +679,4 @@ CyberStrikeAI is a professional security testing platform designed to assist sec
 ---
 
 Need help or want to contribute? Open an issue or PR—community tooling additions are welcome!
-
 

@@ -2612,6 +2612,49 @@
                                         </div>
 
                                         <div class="settings-subsection-header">
+                                            <h5 data-i18n="settingsBasic.rerankConfig">重排模型配置</h5>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="checkbox-label">
+                                                <input type="checkbox" id="knowledge-rerank-enabled" class="modern-checkbox" />
+                                                <span class="checkbox-custom"></span>
+                                                <span class="checkbox-text" data-i18n="settingsBasic.enableRerank">启用检索重排</span>
+                                            </label>
+                                            <small class="form-hint" data-i18n="settingsBasic.enableRerankHint">开启后会在向量召回候选上调用 /rerank 接口，失败时自动回退向量顺序。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-rerank-provider" data-i18n="settingsBasic.provider">提供商</label>
+                                            <select id="knowledge-rerank-provider">
+                                                <option value="openai_compatible" data-i18n="settingsBasic.rerankProviderOpenAICompatible">OpenAI 兼容 /rerank</option>
+                                            </select>
+                                            <small class="form-hint" data-i18n="settingsBasic.rerankProviderHint">适用于 Jina、Cohere、SiliconFlow 等兼容 query/documents/results 格式的重排接口。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-rerank-base-url">Base URL</label>
+                                            <input type="text" id="knowledge-rerank-base-url" data-i18n="settingsBasic.rerankBaseUrlPlaceholder" data-i18n-attr="placeholder" placeholder="留空则使用OpenAI配置的base_url" />
+                                            <small class="form-hint" data-i18n="settingsBasic.rerankBaseUrlHint">填写到服务根路径即可，例如 https://api.example.com/v1；后端会自动追加 /rerank。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-rerank-api-key">API Key</label>
+                                            <input type="password" id="knowledge-rerank-api-key" data-i18n="settingsBasic.rerankApiKeyPlaceholder" data-i18n-attr="placeholder" placeholder="留空则使用OpenAI配置的api_key" />
+                                            <small class="form-hint" data-i18n="settingsBasic.rerankApiKeyHint">为空时运行时继承全局 OpenAI API Key。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-rerank-model" data-i18n="settingsBasic.rerankModel">重排模型名称</label>
+                                            <input type="text" id="knowledge-rerank-model" data-i18n="settingsBasic.rerankModelPlaceholder" data-i18n-attr="placeholder" placeholder="bge-reranker-v2-m3" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-rerank-top-n" data-i18n="settingsBasic.rerankTopN">重排返回 Top-N</label>
+                                            <input type="number" id="knowledge-rerank-top-n" min="0" max="200" data-i18n="settingsBasic.rerankTopNPlaceholder" data-i18n-attr="placeholder" placeholder="0" />
+                                            <small class="form-hint" data-i18n="settingsBasic.rerankTopNHint">0 表示对预取候选全部重排；最终返回数量仍由 Top-K 和预算控制。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-rerank-timeout" data-i18n="settingsBasic.rerankTimeout">重排 HTTP 超时（秒）</label>
+                                            <input type="number" id="knowledge-rerank-timeout" min="0" max="600" data-i18n="settingsBasic.rerankTimeoutPlaceholder" data-i18n-attr="placeholder" placeholder="60" />
+                                            <small class="form-hint" data-i18n="settingsBasic.rerankTimeoutHint">0 表示使用默认 60 秒。</small>
+                                        </div>
+
+                                        <div class="settings-subsection-header">
                                             <h5 data-i18n="settingsBasic.postRetrieveHeader">检索后处理（去重 / 预算）</h5>
                                         </div>
                                         <p class="form-hint" style="margin: 0 0 12px 0;" data-i18n="settingsBasic.postRetrieveDedupeAuto">检索结果会自动按正文规范化去重（合并仅空白不同的重复片段），无需配置。</p>
@@ -4242,4 +4285,3 @@
     <script src="/static/js/c2.js"></script>
 </body>
 </html>
-

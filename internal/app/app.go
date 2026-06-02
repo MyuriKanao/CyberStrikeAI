@@ -216,6 +216,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 			SimilarityThreshold: cfg.Knowledge.Retrieval.SimilarityThreshold,
 			SubIndexFilter:      cfg.Knowledge.Retrieval.SubIndexFilter,
 			PostRetrieve:        cfg.Knowledge.Retrieval.PostRetrieve,
+			Rerank:              knowledge.EffectiveRerankConfig(cfg.Knowledge.Retrieval.Rerank, &cfg.OpenAI),
 		}
 		knowledgeRetriever = knowledge.NewRetriever(knowledgeDB, embedder, retrievalConfig, log.Logger)
 
@@ -1776,6 +1777,7 @@ func initializeKnowledge(
 		SimilarityThreshold: cfg.Knowledge.Retrieval.SimilarityThreshold,
 		SubIndexFilter:      cfg.Knowledge.Retrieval.SubIndexFilter,
 		PostRetrieve:        cfg.Knowledge.Retrieval.PostRetrieve,
+		Rerank:              knowledge.EffectiveRerankConfig(cfg.Knowledge.Retrieval.Rerank, &cfg.OpenAI),
 	}
 	knowledgeRetriever := knowledge.NewRetriever(knowledgeDB, embedder, retrievalConfig, logger)
 
