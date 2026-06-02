@@ -2187,14 +2187,6 @@ if (!document.getElementById('toast-notification-styles')) {
     document.head.appendChild(style);
 }
 
-// 点击模态框外部关闭
-window.addEventListener('click', function(event) {
-    const modal = document.getElementById('knowledge-item-modal');
-    if (event.target === modal) {
-        closeKnowledgeItemModal();
-    }
-});
-
 // 切换到设置页面（用于功能未启用时的提示）
 function switchToSettings() {
     if (typeof switchPage === 'function') {
@@ -2270,4 +2262,3 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 });
-
