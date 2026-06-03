@@ -702,17 +702,38 @@ func (e *Executor) formatParamValue(param config.ParameterConfig, value interfac
 	}
 }
 
-// IsBackgroundShellCommand 检测命令是否为完全后台命令（末尾有独立 &，且不在引号内）。
+// ContainsShellBackgroundOperator 检测命令中是否包含 shell 后台控制符 &（不在引号/转义/重定向/&& 中）。
+func ContainsShellBackgroundOperator(command string) bool {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return false
+	}
+	return lastShellBackgroundOperatorIndex(command) >= 0
+}
+
+// IsBackgroundShellCommand 检测命令是否为完全后台命令（末尾有 shell 后台控制符 &，且不在引号内）。
 // command1 & command2 不算完全后台（command2 仍在前台执行）。
 func IsBackgroundShellCommand(command string) bool {
-	// 移除首尾空格
 	command = strings.TrimSpace(command)
 	if command == "" {
 		return false
 	}
 
-	// 检查命令中所有不在引号内的 & 符号
-	// 找到最后一个 & 符号，检查它是否在命令末尾
+	lastAmpersandPos := lastShellBackgroundOperatorIndex(command)
+	if lastAmpersandPos == -1 {
+		return false
+	}
+
+	afterAmpersand := strings.TrimSpace(command[lastAmpersandPos+1:])
+	if afterAmpersand == "" {
+		beforeAmpersand := strings.TrimSpace(command[:lastAmpersandPos])
+		return beforeAmpersand != ""
+	}
+
+	return false
+}
+
+func lastShellBackgroundOperatorIndex(command string) int {
 	inSingleQuote := false
 	inDoubleQuote := false
 	escaped := false
@@ -736,52 +757,25 @@ func IsBackgroundShellCommand(command string) bool {
 			continue
 		}
 		if r == '&' && !inSingleQuote && !inDoubleQuote {
-			// 检查 & 前后是否有空格或换行（确保是独立的 &，而不是变量名的一部分）
-			isStandalone := false
-
-			// 检查前面：空格、制表符、换行符，或者是命令开头
-			if i == 0 {
-				isStandalone = true
-			} else {
-				prev := command[i-1]
-				if prev == ' ' || prev == '\t' || prev == '\n' || prev == '\r' {
-					isStandalone = true
-				}
+			prev := byte(0)
+			next := byte(0)
+			if i > 0 {
+				prev = command[i-1]
 			}
-
-			// 检查后面：空格、制表符、换行符，或者是命令末尾
-			if isStandalone {
-				if i == len(command)-1 {
-					// 在末尾，肯定是独立的 &
-					lastAmpersandPos = i
-				} else {
-					next := command[i+1]
-					if next == ' ' || next == '\t' || next == '\n' || next == '\r' {
-						// 后面有空格，是独立的 &
-						lastAmpersandPos = i
-					}
-				}
+			if i+1 < len(command) {
+				next = command[i+1]
 			}
+			if prev == '&' || next == '&' {
+				continue
+			}
+			if prev == '>' || next == '>' {
+				continue
+			}
+			lastAmpersandPos = i
 		}
 	}
 
-	// 如果没有找到 & 符号，不是后台命令
-	if lastAmpersandPos == -1 {
-		return false
-	}
-
-	// 检查最后一个 & 后面是否还有非空内容
-	afterAmpersand := strings.TrimSpace(command[lastAmpersandPos+1:])
-	if afterAmpersand == "" {
-		// & 在末尾或后面只有空白字符，这是完全后台命令
-		// 检查 & 前面是否有内容
-		beforeAmpersand := strings.TrimSpace(command[:lastAmpersandPos])
-		return beforeAmpersand != ""
-	}
-
-	// 如果 & 后面还有非空内容，说明是 command1 & command2 的情况
-	// 这种情况下，command2会在前台执行，所以不算完全后台命令
-	return false
+	return lastAmpersandPos
 }
 
 // executeSystemCommand 执行系统命令

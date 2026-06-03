@@ -65,7 +65,10 @@ func (w *einoStreamingShellWrap) ExecuteStreaming(ctx context.Context, input *fi
 	}
 	req := *input
 	userCmd := strings.TrimSpace(req.Command)
-	if security.IsBackgroundShellCommand(req.Command) && !req.RunInBackendGround {
+	hasBackgroundJob := security.ContainsShellBackgroundOperator(req.Command)
+	isFullBackground := security.IsBackgroundShellCommand(req.Command)
+	runUntilRootExit := hasBackgroundJob && !isFullBackground && !req.RunInBackendGround
+	if isFullBackground && !req.RunInBackendGround {
 		req.RunInBackendGround = true
 	}
 	req.Command = prependPythonUnbufferedEnv(req.Command)
@@ -78,7 +81,13 @@ func (w *einoStreamingShellWrap) ExecuteStreaming(ctx context.Context, input *fi
 		execCtx, execCancel = context.WithTimeout(ctx, time.Duration(w.toolTimeoutMinutes)*time.Minute)
 	}
 
-	sr, err := w.inner.ExecuteStreaming(execCtx, &req)
+	var sr *schema.StreamReader[*filesystem.ExecuteResponse]
+	var err error
+	if runUntilRootExit {
+		sr, err = executeStreamingShellUntilRootExit(execCtx, req.Command)
+	} else {
+		sr, err = w.inner.ExecuteStreaming(execCtx, &req)
+	}
 	if err != nil {
 		if execCancel != nil {
 			execCancel()

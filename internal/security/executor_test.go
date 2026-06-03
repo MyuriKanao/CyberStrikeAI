@@ -228,6 +228,63 @@ func TestExecuteSystemCommand_BackgroundDoesNotBlockOnChildStdout(t *testing.T) 
 	}
 }
 
+func TestShellBackgroundOperatorDetection(t *testing.T) {
+	tests := []struct {
+		name     string
+		command  string
+		contains bool
+		full     bool
+	}{
+		{
+			name:     "full background",
+			command:  "python3 -m http.server 8888 &",
+			contains: true,
+			full:     true,
+		},
+		{
+			name:     "mixed background and foreground without whitespace after ampersand",
+			command:  `python3 -m http.server 8888 &(sleep 2); echo ready`,
+			contains: true,
+			full:     false,
+		},
+		{
+			name:     "logical and is not background",
+			command:  "echo one && echo two",
+			contains: false,
+			full:     false,
+		},
+		{
+			name:     "stderr redirect is not background",
+			command:  "python3 app.py 2>&1",
+			contains: false,
+			full:     false,
+		},
+		{
+			name:     "bash combined redirect is not background",
+			command:  "python3 app.py &> server.log",
+			contains: false,
+			full:     false,
+		},
+		{
+			name:     "quoted ampersand is not background",
+			command:  `printf '%s\n' 'a&b'`,
+			contains: false,
+			full:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ContainsShellBackgroundOperator(tt.command); got != tt.contains {
+				t.Fatalf("ContainsShellBackgroundOperator(%q) = %v, want %v", tt.command, got, tt.contains)
+			}
+			if got := IsBackgroundShellCommand(tt.command); got != tt.full {
+				t.Fatalf("IsBackgroundShellCommand(%q) = %v, want %v", tt.command, got, tt.full)
+			}
+		})
+	}
+}
+
 func TestPaginateLines(t *testing.T) {
 	lines := []string{"Line 1", "Line 2", "Line 3", "Line 4", "Line 5"}
 
