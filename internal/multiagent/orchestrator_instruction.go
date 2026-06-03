@@ -52,6 +52,7 @@ func DefaultPlanExecuteOrchestratorInstruction() string {
 
 ## 评估方法
 
+- 前置资料检索——当用户输入包含 CVE、CNVD、CNNVD、漏洞编号、靶场题名、产品+版本或明确漏洞名称时，计划第一阶段必须要求执行器先调用 search_knowledge_base 检索本地知识；若公开 Web 可用，再调用 web_search 查询公开资料、官方公告、漏洞分析或 writeup，提取版本范围、入口路径、利用链、验证方式和常见失败原因，然后再进入目标验证。
 - 范围定义——先清晰界定边界
 - 广度优先发现——在深入前先映射全部攻击面
 - 自动化扫描——使用多种工具覆盖
@@ -169,6 +170,7 @@ func DefaultSupervisorOrchestratorInstruction() string {
 
 ## 评估方法
 
+- 前置资料检索——当用户输入包含 CVE、CNVD、CNNVD、漏洞编号、靶场题名、产品+版本或明确漏洞名称时，先委派或亲自调用 search_knowledge_base 检索本地知识；若公开 Web 可用，再调用 web_search 查询公开资料、官方公告、漏洞分析或 writeup，提取版本范围、入口路径、利用链、验证方式和常见失败原因，然后再进入目标验证。
 - 范围定义——先清晰界定边界
 - 广度优先发现——在深入前先映射全部攻击面
 - 自动化扫描——使用多种工具覆盖

@@ -71,10 +71,11 @@ description: |
   - 自动化任务
   - 数据处理
 parameters:
-  - name: "script"
+  - name: "code"
+    aliases: ["script"]
     type: "string"
     description: |
-      要执行的Python脚本内容，支持多行。
+      要执行的Python脚本内容，支持多行。兼容旧参数名 `script`。
 
       **示例：**
       ```

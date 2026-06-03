@@ -17,9 +17,10 @@ description: |
   - 文件发现
   - 渗透测试
 parameters:
-  - name: "url"
+  - name: "target"
+    aliases: ["url"]
     type: "string"
-    description: "目标URL"
+    description: "目标URL；参数名与其他扫描工具保持一致，兼容旧参数名 `url`，传入后生成 `-u <target>`"
     required: true
     flag: "-u"
     format: "flag"

@@ -198,6 +198,44 @@ func TestInstallPluginRejectsReservedToolNameConflict(t *testing.T) {
 	}
 }
 
+func TestInstallPluginAllowsMissingReservedCommandProvider(t *testing.T) {
+	repo := writeFixtureRepository(t)
+	manager := New(filepath.Join(t.TempDir(), "plugins"))
+	manager.SetReservedToolCommands(map[string]string{
+		"nuclei": "definitely-missing-cyberstrike-plugin-test-binary",
+	})
+	source, err := manager.AddOrSyncSource(context.Background(), "fixture", repo)
+	if err != nil {
+		t.Fatalf("AddOrSyncSource: %v", err)
+	}
+
+	installed, err := manager.InstallPlugin(context.Background(), source.Name, "nuclei")
+	if err != nil {
+		t.Fatalf("InstallPlugin: %v", err)
+	}
+	if installed.ID != "nuclei" || len(installed.ToolNames) != 1 || installed.ToolNames[0] != "nuclei" {
+		t.Fatalf("unexpected installed plugin: %+v", installed)
+	}
+}
+
+func TestInstallPluginRejectsResolvedReservedCommandConflict(t *testing.T) {
+	repo := writeFixtureRepository(t)
+	manager := New(filepath.Join(t.TempDir(), "plugins"))
+	manager.SetReservedToolCommands(map[string]string{
+		"nuclei": os.Args[0],
+	})
+	source, err := manager.AddOrSyncSource(context.Background(), "fixture", repo)
+	if err != nil {
+		t.Fatalf("AddOrSyncSource: %v", err)
+	}
+
+	if _, err := manager.InstallPlugin(context.Background(), source.Name, "nuclei"); err == nil {
+		t.Fatal("expected resolved reserved command conflict")
+	} else if !strings.Contains(err.Error(), "tool name conflicts") {
+		t.Fatalf("expected tool name conflict error, got %v", err)
+	}
+}
+
 func TestInstallPluginRejectsInstalledPluginToolNameConflict(t *testing.T) {
 	repo := writeFixtureRepository(t)
 	manager := New(filepath.Join(t.TempDir(), "plugins"))

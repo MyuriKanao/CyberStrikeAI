@@ -25,9 +25,9 @@ description: |
   - **无回显漏洞验证**：任何需要确认目标是否执行了特定操作的情况
 
   **工作流程：**
-  1. 使用 `operation=get_domain` 获取临时域名（如：`abc123.dnslog.cn`）
+  1. 使用 `action=get_domain` 获取临时域名（如：`abc123.dnslog.cn`）
   2. 在漏洞测试payload中使用该域名
-  3. 使用 `operation=get_records` 查询是否有DNS查询记录
+  3. 使用 `action=get_records` 查询是否有DNS查询记录
   4. 如果看到记录，说明漏洞存在且payload已执行
 
   **注意事项：**
@@ -36,13 +36,19 @@ description: |
   - 该工具依赖dnslog.cn服务，需要网络连接
   - 工具会自动管理Cookie会话，确保获取域名和查询记录使用同一会话
 parameters:
-  - name: "operation"
+  - name: "action"
+    aliases: ["operation"]
     type: "string"
     description: |
       操作类型，支持两种操作：
       - `get_domain`: 获取临时域名
       - `get_records`: 查询DNS记录
-    required: true
+      兼容旧参数名 `operation`；未填写时默认 `get_domain`。
+    required: false
+    default: "get_domain"
+    options:
+      - "get_domain"
+      - "get_records"
     position: 0
     format: "positional"
   - name: "domain"
@@ -50,7 +56,7 @@ parameters:
     description: |
       域名参数（仅用于get_records操作）
 
-      当operation为get_records时，此参数为必填，需要提供之前获取的临时域名。
+      当action为get_records时，此参数为必填，需要提供之前获取的临时域名。
     required: false
     position: 1
     format: "positional"

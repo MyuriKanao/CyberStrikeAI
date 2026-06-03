@@ -2,6 +2,7 @@ package pluginstore
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"os"
@@ -59,6 +60,7 @@ func (m *Manager) CatalogForSource(name string) (*Catalog, error) {
 				cat.Plugins[i].SourceName = src.Name
 				cat.Plugins[i].SourceURL = src.URL
 			}
+			m.annotateCatalogAvailability(cat)
 			return cat, nil
 		}
 	}
@@ -80,9 +82,29 @@ func (m *Manager) Catalogs() ([]Catalog, error) {
 			cat.Plugins[i].SourceName = src.Name
 			cat.Plugins[i].SourceURL = src.URL
 		}
+		m.annotateCatalogAvailability(cat)
 		out = append(out, *cat)
 	}
 	return out, nil
+}
+
+func (m *Manager) annotateCatalogAvailability(cat *Catalog) {
+	if m == nil || cat == nil {
+		return
+	}
+	for i := range cat.Plugins {
+		toolNames, err := loadToolNames(cat.Plugins[i].Directory, cat.Plugins[i].Tools)
+		if err != nil {
+			continue
+		}
+		conflicts := m.ToolNameConflicts(cat.Plugins[i].ID, toolNames)
+		if len(conflicts) == 0 {
+			cat.Plugins[i].InstallState = "available"
+			continue
+		}
+		cat.Plugins[i].InstallState = "conflict"
+		cat.Plugins[i].ConflictTools = conflicts
+	}
 }
 
 func syncSource(ctx context.Context, sourceURL string, target string, githubToken string) error {
@@ -146,7 +168,8 @@ func githubAuthorizationHeader(token string) string {
 	if token == "" {
 		return ""
 	}
-	return "Bearer " + token
+	encoded := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
+	return "Basic " + encoded
 }
 
 func isGitHubURL(rawURL string) bool {

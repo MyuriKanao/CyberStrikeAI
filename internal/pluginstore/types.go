@@ -34,6 +34,8 @@ type PluginManifest struct {
 	SourceName    string         `yaml:"-" json:"source_name,omitempty"`
 	SourceURL     string         `yaml:"-" json:"source_url,omitempty"`
 	PluginRef     PluginRef      `yaml:"-" json:"plugin_ref,omitempty"`
+	InstallState  string         `yaml:"-" json:"install_state,omitempty"`
+	ConflictTools []string       `yaml:"-" json:"conflict_tools,omitempty"`
 }
 
 type Platform struct {

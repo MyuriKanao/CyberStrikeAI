@@ -1,6 +1,7 @@
 package pluginstore
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,6 +26,58 @@ func TestLoadCatalog(t *testing.T) {
 	}
 	if len(plugin.Tools) != 1 || plugin.Tools[0].File != "tools/nuclei.yaml" {
 		t.Fatalf("unexpected plugin tools: %+v", plugin.Tools)
+	}
+}
+
+func TestCatalogForSourceAnnotatesToolNameConflict(t *testing.T) {
+	repo := writeFixtureRepository(t)
+	manager := New(filepath.Join(t.TempDir(), "plugins"))
+	manager.SetReservedToolNames([]string{"nuclei"})
+	source, err := manager.AddOrSyncSource(context.Background(), "fixture", repo)
+	if err != nil {
+		t.Fatalf("AddOrSyncSource: %v", err)
+	}
+
+	catalog, err := manager.CatalogForSource(source.Name)
+	if err != nil {
+		t.Fatalf("CatalogForSource: %v", err)
+	}
+	if len(catalog.Plugins) != 1 {
+		t.Fatalf("plugin count = %d", len(catalog.Plugins))
+	}
+	plugin := catalog.Plugins[0]
+	if plugin.InstallState != "conflict" {
+		t.Fatalf("install state = %q, want conflict", plugin.InstallState)
+	}
+	if len(plugin.ConflictTools) != 1 || plugin.ConflictTools[0] != "nuclei" {
+		t.Fatalf("conflict tools = %+v", plugin.ConflictTools)
+	}
+}
+
+func TestCatalogForSourceAllowsMissingReservedCommandProvider(t *testing.T) {
+	repo := writeFixtureRepository(t)
+	manager := New(filepath.Join(t.TempDir(), "plugins"))
+	manager.SetReservedToolCommands(map[string]string{
+		"nuclei": "definitely-missing-cyberstrike-plugin-test-binary",
+	})
+	source, err := manager.AddOrSyncSource(context.Background(), "fixture", repo)
+	if err != nil {
+		t.Fatalf("AddOrSyncSource: %v", err)
+	}
+
+	catalog, err := manager.CatalogForSource(source.Name)
+	if err != nil {
+		t.Fatalf("CatalogForSource: %v", err)
+	}
+	if len(catalog.Plugins) != 1 {
+		t.Fatalf("plugin count = %d", len(catalog.Plugins))
+	}
+	plugin := catalog.Plugins[0]
+	if plugin.InstallState != "available" {
+		t.Fatalf("install state = %q, want available; conflicts=%+v", plugin.InstallState, plugin.ConflictTools)
+	}
+	if len(plugin.ConflictTools) != 0 {
+		t.Fatalf("conflict tools = %+v, want none", plugin.ConflictTools)
 	}
 }
 

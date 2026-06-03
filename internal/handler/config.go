@@ -246,7 +246,7 @@ type GetConfigResponse struct {
 	Knowledge  config.KnowledgeConfig  `json:"knowledge"`
 	Robots     config.RobotsConfig     `json:"robots,omitempty"`
 	MultiAgent config.MultiAgentPublic `json:"multi_agent,omitempty"`
-	C2         config.C2Public          `json:"c2"`
+	C2         config.C2Public         `json:"c2"`
 }
 
 // ToolConfigInfo 工具配置信息
@@ -320,7 +320,7 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 	}
 	multiPub := config.MultiAgentPublic{
 		Enabled:                      h.config.MultiAgent.Enabled,
-		RobotDefaultAgentMode: config.NormalizeRobotAgentMode(h.config.MultiAgent),
+		RobotDefaultAgentMode:        config.NormalizeRobotAgentMode(h.config.MultiAgent),
 		BatchUseMultiAgent:           h.config.MultiAgent.BatchUseMultiAgent,
 		SubAgentCount:                subAgentCount,
 		Orchestration:                config.NormalizeMultiAgentOrchestration(h.config.MultiAgent.Orchestration),
@@ -639,16 +639,16 @@ func (h *ConfigHandler) GetTools(c *gin.Context) {
 
 // UpdateConfigRequest 更新配置请求
 type UpdateConfigRequest struct {
-	OpenAI     *config.OpenAIConfig         `json:"openai,omitempty"`
-	Vision     *config.VisionConfig         `json:"vision,omitempty"`
-	FOFA       *config.FofaConfig           `json:"fofa,omitempty"`
-	MCP        *config.MCPConfig            `json:"mcp,omitempty"`
-	Tools      []ToolEnableStatus           `json:"tools,omitempty"`
-	Agent      *AgentConfigUpdate           `json:"agent,omitempty"`
-	Knowledge  *config.KnowledgeConfig      `json:"knowledge,omitempty"`
-	Robots     *config.RobotsConfig         `json:"robots,omitempty"`
-	MultiAgent *config.MultiAgentAPIUpdate  `json:"multi_agent,omitempty"`
-	C2         *config.C2APIUpdate           `json:"c2,omitempty"`
+	OpenAI     *config.OpenAIConfig        `json:"openai,omitempty"`
+	Vision     *config.VisionConfig        `json:"vision,omitempty"`
+	FOFA       *config.FofaConfig          `json:"fofa,omitempty"`
+	MCP        *config.MCPConfig           `json:"mcp,omitempty"`
+	Tools      []ToolEnableStatus          `json:"tools,omitempty"`
+	Agent      *AgentConfigUpdate          `json:"agent,omitempty"`
+	Knowledge  *config.KnowledgeConfig     `json:"knowledge,omitempty"`
+	Robots     *config.RobotsConfig        `json:"robots,omitempty"`
+	MultiAgent *config.MultiAgentAPIUpdate `json:"multi_agent,omitempty"`
+	C2         *config.C2APIUpdate         `json:"c2,omitempty"`
 }
 
 // AgentConfigUpdate 用于 PATCH /api/config 的 agent 段：仅 JSON 中出现的字段（指针非 nil）覆盖内存配置。
@@ -1358,7 +1358,7 @@ func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 			Result:   "success",
 			Message:  "配置已应用",
 			Detail: map[string]interface{}{
-				"tools_count":      len(h.config.Security.Tools),
+				"tools_count":       len(h.config.Security.Tools),
 				"knowledge_enabled": h.config.Knowledge.Enabled,
 				"c2_enabled":        h.config.C2.EnabledEffective(),
 			},

@@ -1,5 +1,73 @@
 name: "masscan"
-command: "masscan"
+command: "/bin/bash"
+args:
+  - "-c"
+  - |
+    set -u
+
+    TARGET=""
+    PORTS="1-65535"
+    ARGS=("$@")
+
+    i=0
+    while [ "$i" -lt "${#ARGS[@]}" ]; do
+      arg="${ARGS[$i]}"
+      case "$arg" in
+        -p|--ports)
+          if [ $((i + 1)) -lt "${#ARGS[@]}" ]; then
+            PORTS="${ARGS[$((i + 1))]}"
+            i=$((i + 1))
+          fi
+          ;;
+        -*)
+          if [ $((i + 1)) -lt "${#ARGS[@]}" ] && [ "${ARGS[$((i + 1))]#-}" != "${ARGS[$((i + 1))]}" ]; then
+            :
+          fi
+          ;;
+        *)
+          if [ -z "$TARGET" ]; then
+            TARGET="$arg"
+          fi
+          ;;
+      esac
+      i=$((i + 1))
+    done
+
+    if [ -z "$TARGET" ]; then
+      echo "错误: 缺少目标IP地址或CIDR范围" >&2
+      exit 1
+    fi
+
+    if command -v masscan >/dev/null 2>&1; then
+      tmp_out="$(mktemp)"
+      tmp_err="$(mktemp)"
+      if masscan "$@" >"$tmp_out" 2>"$tmp_err"; then
+        cat "$tmp_out"
+        cat "$tmp_err" >&2
+        rm -f "$tmp_out" "$tmp_err"
+        exit 0
+      fi
+      status=$?
+      combined="$(cat "$tmp_err" "$tmp_out")"
+      if ! printf '%s' "$combined" | grep -qiE 'permission denied|need to sudo|run as root|Operation not permitted'; then
+        cat "$tmp_out"
+        cat "$tmp_err" >&2
+        rm -f "$tmp_out" "$tmp_err"
+        exit "$status"
+      fi
+      rm -f "$tmp_out" "$tmp_err"
+      echo "masscan 当前缺少 raw socket 权限，自动使用 nmap TCP connect 扫描兜底。" >&2
+    else
+      echo "未找到 masscan，自动使用 nmap TCP connect 扫描兜底。" >&2
+    fi
+
+    if ! command -v nmap >/dev/null 2>&1; then
+      echo "错误: nmap 不可用，无法执行 masscan 权限不足时的兜底扫描。" >&2
+      exit 1
+    fi
+
+    exec nmap -sT -Pn -p "$PORTS" "$TARGET"
+  - "_"
 enabled: true
 short_description: "高速互联网级端口扫描工具"
 description: |
@@ -15,6 +83,7 @@ description: |
   - 大规模网络扫描
   - 互联网级扫描
   - 快速端口发现
+  - 当当前进程缺少masscan所需的raw socket权限时，自动降级为nmap TCP connect扫描
 parameters:
   - name: "target"
     type: "string"

@@ -25,6 +25,7 @@ description: |
   - 请确保有权限扫描目标
 parameters:
   - name: "target"
+    aliases: ["targets"]
     type: "string"
     description: |
       目标 IP、主机名、CIDR 或域名；URL 会自动提取主机部分。
@@ -69,6 +70,7 @@ parameters:
     format: "flag"
     default: false
   - name: "scan_type"
+    aliases: ["scan"]
     type: "string"
     description: |
       扫描类型选项；**若填写则替换默认的 `-sT -sV -sC`**，只保留你写的选项。

@@ -551,7 +551,7 @@ func initializePluginStore(cfg *config.Config, configPath string, logger *zap.Lo
 	}
 	manager := pluginstore.New(rootDir)
 	manager.SetGitHubToken(cfg.PluginStore.GitHubToken)
-	manager.SetReservedToolNames(toolConfigNames(cfg.Security.Tools))
+	manager.SetReservedToolCommands(toolConfigCommands(cfg.Security.Tools))
 	if err := manager.Ensure(); err != nil {
 		return nil, err
 	}
@@ -577,15 +577,15 @@ func initializePluginStore(cfg *config.Config, configPath string, logger *zap.Lo
 	return manager, nil
 }
 
-func toolConfigNames(tools []config.ToolConfig) []string {
-	names := make([]string, 0, len(tools))
+func toolConfigCommands(tools []config.ToolConfig) map[string]string {
+	commands := make(map[string]string, len(tools))
 	for _, tool := range tools {
 		name := strings.TrimSpace(tool.Name)
 		if name != "" {
-			names = append(names, name)
+			commands[name] = strings.TrimSpace(tool.Command)
 		}
 	}
-	return names
+	return commands
 }
 
 func mergePathDirs(base []string, extra []string) []string {

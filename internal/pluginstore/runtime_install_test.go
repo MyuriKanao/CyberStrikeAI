@@ -1,6 +1,7 @@
 package pluginstore
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,7 +67,8 @@ func TestGitHubTokenAuth(t *testing.T) {
 	if args[0] != "-c" {
 		t.Fatalf("first git auth arg = %q, want -c", args[0])
 	}
-	if args[1] != "http.https://github.com/.extraHeader=Authorization: Bearer "+token {
+	wantAuthValue := "Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token))
+	if args[1] != "http.https://github.com/.extraHeader=Authorization: "+wantAuthValue {
 		t.Fatalf("git auth header arg = %q", args[1])
 	}
 	if strings.Contains(strings.Join(args, " "), "github.com/example/CyberStrikeAI-Plugins.git@") {
@@ -75,7 +77,7 @@ func TestGitHubTokenAuth(t *testing.T) {
 	if got := gitAuthArgs(token, "https://gitlab.com/example/repo.git"); got != nil {
 		t.Fatalf("non-github sources should not receive github token args: %+v", got)
 	}
-	if got := githubAuthorizationHeader(token); got != "Bearer "+token {
+	if got := githubAuthorizationHeader(token); got != wantAuthValue {
 		t.Fatalf("github authorization header = %q", got)
 	}
 	if got := githubAuthorizationHeader(" "); got != "" {

@@ -1,60 +1,652 @@
 name: "hydra"
-command: "hydra"
+command: "python3"
+args:
+  - "-c"
+  - |
+    import argparse
+    import concurrent.futures
+    import json
+    import os
+    import shlex
+    import shutil
+    import subprocess
+    import sys
+    import tempfile
+    import threading
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    HTTP_SERVICES = {
+        "http-form-post",
+        "https-form-post",
+        "http-post-form",
+        "https-post-form",
+        "http-post",
+        "https-post",
+        "http-get",
+        "https-get",
+    }
+
+
+    def emit(obj, code=0):
+        print(json.dumps(obj, ensure_ascii=False, indent=2))
+        return code
+
+
+    def split_list(raw):
+        if raw is None:
+            return []
+        text = str(raw).strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        except Exception:
+            pass
+        if text.startswith("[") and text.endswith("]") and "," not in text:
+            text = text[1:-1]
+            return [item.strip() for item in text.split() if item.strip()]
+        parts = []
+        for chunk in text.replace("\r", "\n").split("\n"):
+            parts.extend(piece.strip() for piece in chunk.split(","))
+        return [item for item in parts if item]
+
+
+    def read_lines(path):
+        if not path:
+            return []
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                return [line.strip() for line in f if line.strip()]
+        except Exception as exc:
+            raise RuntimeError(f"无法读取字典文件 {path}: {exc}") from exc
+
+
+    def parse_headers(raw):
+        headers = {}
+        if not raw:
+            return headers
+        text = raw.strip()
+        if not text:
+            return headers
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return {str(k): str(v) for k, v in parsed.items()}
+            if isinstance(parsed, list):
+                text = "\n".join(str(item) for item in parsed)
+        except Exception:
+            pass
+        for line in text.replace(";", "\n").splitlines():
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            key = key.strip()
+            if key:
+                headers[key] = value.strip()
+        return headers
+
+
+    def parse_int(raw, default):
+        try:
+            return int(float(str(raw)))
+        except Exception:
+            return default
+
+
+    def service_name(args):
+        service = (args.service or "").strip()
+        target = (args.target or "").strip()
+        if not service and target.lower() in HTTP_SERVICES:
+            service = target
+        return service
+
+
+    def is_http_login(args):
+        if args.url:
+            return True
+        target = (args.target or "").strip().lower()
+        service = (args.service or "").strip().lower()
+        return target.startswith(("http://", "https://")) or target in HTTP_SERVICES or service in HTTP_SERVICES
+
+
+    def collect_credentials(args):
+        users = []
+        users.extend(split_list(args.credential_lists))
+        users.extend(split_list(args.user_list))
+        users.extend(read_lines(args.username_file))
+        users.extend(split_list(args.username))
+
+        passwords = []
+        passwords.extend(split_list(args.password_list))
+        passwords.extend(read_lines(args.password_file))
+        passwords.extend(split_list(args.password))
+
+        users = list(dict.fromkeys(users))
+        passwords = list(dict.fromkeys(passwords))
+        return users, passwords
+
+
+    def effective_content_type(args, url):
+        raw = (args.content_type or "auto").strip().lower()
+        if raw != "auto":
+            return raw
+        if args.body_template and args.body_template.lstrip().startswith("{"):
+            return "application/json"
+        path = urllib.parse.urlsplit(url).path.lower()
+        if "/api/" in path or path.endswith(".json"):
+            return "application/json"
+        return "application/x-www-form-urlencoded"
+
+
+    def render_body(args, username, password, username_field, content_type):
+        if args.body_template:
+            rendered = (
+                args.body_template.replace("^USER^", username)
+                .replace("^PASS^", password)
+                .replace("{user}", username)
+                .replace("{username}", username)
+                .replace("{pass}", password)
+                .replace("{password}", password)
+            )
+            return rendered.encode("utf-8")
+        password_field = args.password_field or "password"
+        if "json" in content_type:
+            return json.dumps({username_field: username, password_field: password}).encode("utf-8")
+        return urllib.parse.urlencode({username_field: username, password_field: password}).encode("utf-8")
+
+
+    def response_text(resp):
+        body = resp.read()
+        charset = resp.headers.get_content_charset() or "utf-8"
+        return body.decode(charset, errors="replace")
+
+
+    def try_http_login(args, url, username, password, username_field, content_type, headers):
+        method = (args.method or "POST").upper()
+        body = None if method == "GET" else render_body(args, username, password, username_field, content_type)
+        req_url = url
+        if method == "GET":
+            query = urllib.parse.urlencode({username_field: username, args.password_field or "password": password})
+            sep = "&" if urllib.parse.urlsplit(url).query else "?"
+            req_url = url + sep + query
+        req = urllib.request.Request(req_url, data=body, method=method)
+        for key, value in headers.items():
+            req.add_header(key, value)
+        if body is not None and "Content-Type" not in headers and "content-type" not in {k.lower(): v for k, v in headers.items()}:
+            req.add_header("Content-Type", content_type)
+        try:
+            with urllib.request.urlopen(req, timeout=parse_int(args.timeout, 10)) as resp:
+                status = resp.getcode()
+                text = response_text(resp)
+                header_text = "\n".join(f"{k}: {v}" for k, v in resp.headers.items())
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            text = response_text(exc)
+            header_text = "\n".join(f"{k}: {v}" for k, v in exc.headers.items())
+        except Exception as exc:
+            return {
+                "ok": False,
+                "username": username,
+                "password": password,
+                "user_field": username_field,
+                "error": str(exc),
+            }
+
+        combined = text + "\n" + header_text
+        failure_hit = bool(args.failure_identifier and args.failure_identifier in combined)
+        success_hit = bool(args.success_identifier and args.success_identifier in combined)
+        ok = success_hit or (200 <= status < 400 and not failure_hit and not args.success_identifier)
+        return {
+            "ok": ok,
+            "status_code": status,
+            "username": username,
+            "password": password,
+            "user_field": username_field,
+            "success_identifier_matched": success_hit,
+            "failure_identifier_matched": failure_hit,
+            "response_snippet": text[:500],
+        }
+
+
+    def run_http_login(args):
+        url = args.url or ""
+        if not url and args.target and args.target.startswith(("http://", "https://")):
+            url = args.target
+        if not url:
+            return emit(
+                {
+                    "status": "error",
+                    "message": "HTTP 登录模式缺少 url。请传入登录接口完整 URL，例如 http://host:port/api/login。",
+                    "received": vars(args),
+                },
+                2,
+            )
+
+        users, passwords = collect_credentials(args)
+        if not users or not passwords:
+            return emit(
+                {
+                    "status": "error",
+                    "message": "缺少账号或密码字典。请传 credential_lists/user_list/username 与 password_list/password。",
+                    "users_count": len(users),
+                    "passwords_count": len(passwords),
+                },
+                2,
+            )
+
+        content_type = effective_content_type(args, url)
+        headers = parse_headers(args.headers)
+        username_fields = split_list(args.username_fields)
+        if not username_fields:
+            username_fields = [args.username_field] if args.username_field else ["username", "email", "user", "login"]
+        if args.body_template:
+            username_fields = [username_fields[0]]
+
+        stop = threading.Event()
+        attempts = 0
+        last_results = []
+
+        def task(username, password, username_field):
+            if stop.is_set():
+                return None
+            return try_http_login(args, url, username, password, username_field, content_type, headers)
+
+        max_workers = max(1, parse_int(args.threads, 4))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [
+                pool.submit(task, username, password, username_field)
+                for username in users
+                for password in passwords
+                for username_field in username_fields
+            ]
+            for fut in concurrent.futures.as_completed(futures):
+                result = fut.result()
+                if result is None:
+                    continue
+                attempts += 1
+                last_results.append(result)
+                last_results = last_results[-5:]
+                if result.get("ok"):
+                    stop.set()
+                    payload = {
+                        "status": "success",
+                        "mode": "http-login-wrapper",
+                        "url": url,
+                        "method": (args.method or "POST").upper(),
+                        "content_type": content_type,
+                        "username": result["username"],
+                        "password": result["password"],
+                        "user_field": result["user_field"],
+                        "attempts": attempts,
+                        "success_identifier_matched": result.get("success_identifier_matched", False),
+                    }
+                    if args.show_command:
+                        payload["command_preview"] = build_command_preview(args, url, users, passwords)
+                    return emit(payload, 0)
+
+        return emit(
+            {
+                "status": "no_match",
+                "mode": "http-login-wrapper",
+                "url": url,
+                "attempts": attempts,
+                "users_count": len(users),
+                "passwords_count": len(passwords),
+                "last_results": last_results,
+            },
+            1,
+        )
+
+
+    def build_command_preview(args, url=None, users=None, passwords=None):
+        parts = ["hydra"]
+        if args.username:
+            parts.extend(["-l", args.username])
+        elif users and len(users) == 1:
+            parts.extend(["-l", users[0]])
+        elif args.username_file:
+            parts.extend(["-L", args.username_file])
+        elif users:
+            parts.extend(["-L", "<inline-users>"])
+        if args.password:
+            parts.extend(["-p", args.password])
+        elif passwords and len(passwords) == 1:
+            parts.extend(["-p", passwords[0]])
+        elif args.password_file:
+            parts.extend(["-P", args.password_file])
+        elif passwords:
+            parts.extend(["-P", "<inline-passwords>"])
+        service = service_name(args) or "http-post-form"
+        if url:
+            parsed = urllib.parse.urlsplit(url)
+            host = parsed.hostname or parsed.netloc
+            path = parsed.path or "/"
+            if parsed.query:
+                path += "?" + parsed.query
+            parts.append(host)
+            if parsed.port:
+                parts.extend(["-s", str(parsed.port)])
+            parts.append(service)
+            parts.append(f"{path}:<body>:F={args.failure_identifier or '<failure>'}:S={args.success_identifier or '<success>'}")
+        else:
+            if args.target:
+                parts.append(args.target)
+            if service:
+                parts.append(service)
+        if args.threads:
+            parts.extend(["-t", str(parse_int(args.threads, 4))])
+        return " ".join(shlex.quote(p) for p in parts)
+
+
+    def write_temp_list(items):
+        tmp = tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8")
+        try:
+            tmp.write("\n".join(items))
+            tmp.write("\n")
+            return tmp.name
+        finally:
+            tmp.close()
+
+
+    def run_external_hydra(args, unknown):
+        users, passwords = collect_credentials(args)
+        cleanup = []
+        hydra = shutil.which("hydra")
+        preview = build_command_preview(args, None, users, passwords)
+        if not hydra:
+            return emit(
+                {
+                    "status": "error",
+                    "message": "系统 PATH 中未找到 hydra。HTTP 登录接口可直接传 url 使用内置包装器；SSH/FTP 等协议需要安装 hydra。",
+                    "install": {
+                        "arch": "sudo pacman -S hydra",
+                        "ubuntu_debian": "sudo apt-get install hydra",
+                        "docker": "本项目 Dockerfile 已包含 hydra，使用镜像运行可直接调用。",
+                    },
+                    "command_preview": preview,
+                },
+                127,
+            )
+
+        cmd = [hydra]
+        if args.username:
+            cmd.extend(["-l", args.username])
+        elif len(users) == 1:
+            cmd.extend(["-l", users[0]])
+        elif args.username_file:
+            cmd.extend(["-L", args.username_file])
+        elif users:
+            path = write_temp_list(users)
+            cleanup.append(path)
+            cmd.extend(["-L", path])
+
+        if args.password:
+            cmd.extend(["-p", args.password])
+        elif len(passwords) == 1:
+            cmd.extend(["-p", passwords[0]])
+        elif args.password_file:
+            cmd.extend(["-P", args.password_file])
+        elif passwords:
+            path = write_temp_list(passwords)
+            cleanup.append(path)
+            cmd.extend(["-P", path])
+
+        if args.port:
+            cmd.extend(["-s", str(parse_int(args.port, 0))])
+        if args.threads:
+            cmd.extend(["-t", str(parse_int(args.threads, 4))])
+
+        target = args.target or ""
+        service = service_name(args)
+        if not target or not service:
+            return emit(
+                {
+                    "status": "error",
+                    "message": "传统 hydra 模式需要 target 和 service；HTTP 登录接口建议传 url。",
+                    "command_preview": preview,
+                },
+                2,
+            )
+        cmd.extend([target, service])
+        if args.additional_args:
+            cmd.extend(shlex.split(args.additional_args))
+        cmd.extend(unknown)
+
+        try:
+            proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=parse_int(args.timeout, 600))
+            sys.stdout.write(proc.stdout)
+            return proc.returncode
+        finally:
+            for path in cleanup:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+
+
+    def main():
+        parser = argparse.ArgumentParser(description="CyberStrikeAI Hydra compatibility wrapper")
+        parser.add_argument("--url")
+        parser.add_argument("--target")
+        parser.add_argument("--service")
+        parser.add_argument("--method", default="POST")
+        parser.add_argument("--username")
+        parser.add_argument("--username-file")
+        parser.add_argument("--credential-lists")
+        parser.add_argument("--user-list")
+        parser.add_argument("--password")
+        parser.add_argument("--password-file")
+        parser.add_argument("--password-list")
+        parser.add_argument("--body-template")
+        parser.add_argument("--form-data", dest="body_template")
+        parser.add_argument("--username-field")
+        parser.add_argument("--username-fields")
+        parser.add_argument("--password-field", default="password")
+        parser.add_argument("--content-type", default="auto")
+        parser.add_argument("--headers")
+        parser.add_argument("--success-identifier")
+        parser.add_argument("--failure-identifier")
+        parser.add_argument("--threads", default="4")
+        parser.add_argument("--timeout", default="10")
+        parser.add_argument("--port")
+        parser.add_argument("--show-command", action="store_true")
+        parser.add_argument("--additional-args")
+        args, unknown = parser.parse_known_args()
+
+        if is_http_login(args):
+            return run_http_login(args)
+        return run_external_hydra(args, unknown)
+
+
+    sys.exit(main())
 enabled: true
-short_description: "密码暴力破解工具，支持多种协议和服务"
+short_description: "Hydra 兼容爆破工具；HTTP 登录接口支持 url/credential_lists/password_list 字段，无需本机安装 hydra"
 description: |
-  Hydra是一个快速的网络登录破解工具，支持多种协议和服务的密码暴力破解。
+  Hydra 兼容爆破工具。
 
-  **主要功能：**
-  - 支持多种协议（SSH, FTP, HTTP, SMB等）
-  - 快速并行破解
-  - 支持用户名和密码字典
-  - 可恢复的会话
+  对 HTTP/HTTPS 登录接口，优先使用内置 Python 包装器，LLM 可以直接传 url、credential_lists、password_list、success_identifier、failure_identifier 等字段；该模式不依赖系统 hydra 可执行文件。
 
-  **使用场景：**
-  - 密码强度测试
-  - 渗透测试
-  - 安全评估
-  - 弱密码检测
+  对 SSH、FTP、SMB 等传统协议，包装器会调用系统 hydra；若 PATH 中不存在 hydra，会返回安装建议和 command_preview，避免只报 exec not found。
+
+  HTTP 登录常用示例：
+  - url: http://192.168.50.147:8080/api/v1/auth/login
+  - target: http-post-form
+  - method: POST
+  - credential_lists: ["admin", "admin@example.local"]
+  - password_list: ["admin", "admin123", "password"]
+  - success_identifier: token
+  - failure_identifier: INVALID_CREDENTIALS
+
+  默认会根据 URL 自动选择 JSON 或表单编码，并尝试 username、email、user、login 作为账号字段。已知字段时请显式设置 username_field、password_field 或 body_template。
 parameters:
-  - name: "target"
+  - name: "url"
+    aliases: ["login_url", "endpoint"]
     type: "string"
-    description: "目标IP或主机名"
-    required: true
-    position: 0
-    format: "positional"
-  - name: "service"
-    type: "string"
-    description: "服务类型（ssh, ftp, http等）"
-    required: true
-    position: 1
-    format: "positional"
-  - name: "username"
-    type: "string"
-    description: "单个用户名"
+    description: "HTTP/HTTPS 登录接口完整 URL。传入该字段时使用内置 HTTP 登录包装器。"
     required: false
-    flag: "-l"
+    flag: "--url"
+    format: "flag"
+  - name: "target"
+    aliases: ["host", "target_host"]
+    type: "string"
+    description: "传统 hydra 目标主机；HTTP 登录场景中也可填 http-post-form/https-post-form 表示服务类型。"
+    required: false
+    flag: "--target"
+    format: "flag"
+  - name: "service"
+    aliases: ["protocol"]
+    type: "string"
+    description: "传统 hydra 服务类型，例如 ssh、ftp、smb、http-post-form。"
+    required: false
+    flag: "--service"
+    format: "flag"
+  - name: "method"
+    type: "string"
+    description: "HTTP 登录请求方法，默认 POST。"
+    required: false
+    default: "POST"
+    options: ["POST", "GET"]
+    flag: "--method"
+    format: "flag"
+  - name: "username"
+    aliases: ["user", "login"]
+    type: "string"
+    description: "单个用户名；可用逗号传多个。"
+    required: false
+    flag: "--username"
     format: "flag"
   - name: "username_file"
+    aliases: ["user_file"]
     type: "string"
-    description: "用户名字典文件"
+    description: "用户名字典文件路径。"
     required: false
-    flag: "-L"
+    flag: "--username-file"
+    format: "flag"
+  - name: "credential_lists"
+    aliases: ["credential_list", "users", "usernames"]
+    type: "array"
+    item_type: "string"
+    description: "内联用户名/账号列表，适合 LLM 直接传数组。"
+    required: false
+    flag: "--credential-lists"
+    format: "flag"
+  - name: "user_list"
+    type: "array"
+    item_type: "string"
+    description: "credential_lists 的同义字段。"
+    required: false
+    flag: "--user-list"
     format: "flag"
   - name: "password"
     type: "string"
-    description: "单个密码"
+    description: "单个密码；可用逗号传多个。"
     required: false
-    flag: "-p"
+    flag: "--password"
     format: "flag"
   - name: "password_file"
     type: "string"
-    description: "密码字典文件"
+    description: "密码字典文件路径。"
     required: false
-    flag: "-P"
+    flag: "--password-file"
+    format: "flag"
+  - name: "password_list"
+    aliases: ["passwords"]
+    type: "array"
+    item_type: "string"
+    description: "内联密码列表，适合 LLM 直接传数组。"
+    required: false
+    flag: "--password-list"
+    format: "flag"
+  - name: "body_template"
+    aliases: ["json_body", "request_body"]
+    type: "string"
+    description: "HTTP 请求体模板，支持 ^USER^、^PASS^、{username}、{password} 占位符；例如 {\"email\":\"^USER^\",\"password\":\"^PASS^\"}。"
+    required: false
+    flag: "--body-template"
+    format: "flag"
+  - name: "form_data"
+    type: "string"
+    description: "body_template 的兼容字段；可传 username=^USER^&password=^PASS^。"
+    required: false
+    flag: "--form-data"
+    format: "flag"
+  - name: "username_field"
+    type: "string"
+    description: "账号字段名，例如 username、email、user；不传时自动尝试 username,email,user,login。"
+    required: false
+    flag: "--username-field"
+    format: "flag"
+  - name: "username_fields"
+    type: "string"
+    description: "多个账号字段名，逗号分隔；例如 username,email,login。"
+    required: false
+    flag: "--username-fields"
+    format: "flag"
+  - name: "password_field"
+    type: "string"
+    description: "密码字段名，默认 password。"
+    required: false
+    default: "password"
+    flag: "--password-field"
+    format: "flag"
+  - name: "content_type"
+    type: "string"
+    description: "HTTP Content-Type，默认 auto；可设 application/json 或 application/x-www-form-urlencoded。"
+    required: false
+    default: "auto"
+    flag: "--content-type"
+    format: "flag"
+  - name: "headers"
+    type: "string"
+    description: "额外 HTTP 头，支持 JSON 对象或多行 Header: value。"
+    required: false
+    flag: "--headers"
+    format: "flag"
+  - name: "success_identifier"
+    type: "string"
+    description: "响应中出现该字符串即判定成功，例如 token、access_token、dashboard。"
+    required: false
+    flag: "--success-identifier"
+    format: "flag"
+  - name: "failure_identifier"
+    type: "string"
+    description: "响应中出现该字符串即判定失败，例如 INVALID_CREDENTIALS、密码错误。"
+    required: false
+    flag: "--failure-identifier"
+    format: "flag"
+  - name: "threads"
+    type: "int"
+    description: "并发线程数，默认 4。"
+    required: false
+    default: 4
+    flag: "--threads"
+    format: "flag"
+  - name: "timeout"
+    type: "int"
+    description: "HTTP 单次请求超时秒数；传统 hydra 模式中作为进程超时。"
+    required: false
+    default: 10
+    flag: "--timeout"
+    format: "flag"
+  - name: "port"
+    type: "int"
+    description: "传统 hydra 模式端口，对应 -s。"
+    required: false
+    flag: "--port"
+    format: "flag"
+  - name: "show_command"
+    type: "bool"
+    description: "返回等效 hydra 命令预览，便于人工复核。"
+    required: false
+    flag: "--show-command"
     format: "flag"
   - name: "additional_args"
     type: "string"
-    description: "额外的Hydra参数"
+    description: "传统 hydra 模式额外参数，按 shell 规则拆分。"
     required: false
-    format: "positional"
+    flag: "--additional-args"
+    format: "flag"

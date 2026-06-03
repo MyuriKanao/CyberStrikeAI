@@ -1,0 +1,138 @@
+name: "web_search"
+command: "python3"
+args:
+  - "-c"
+  - |
+    import html
+    import json
+    import re
+    import sys
+    import urllib.parse
+    import urllib.request
+
+    def textify(value):
+        value = re.sub(r"<[^>]+>", " ", value or "")
+        value = html.unescape(value)
+        return re.sub(r"\s+", " ", value).strip()
+
+    def unwrap_duckduckgo_url(url):
+        parsed = urllib.parse.urlparse(html.unescape(url))
+        if parsed.netloc.endswith("duckduckgo.com"):
+            qs = urllib.parse.parse_qs(parsed.query)
+            if qs.get("uddg"):
+                return qs["uddg"][0]
+        return html.unescape(url)
+
+    def parse_duckduckgo(page, max_results):
+        results = []
+        pattern = re.compile(
+            r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>.*?'
+            r'<a[^>]+class="result__snippet"[^>]*>(.*?)</a>',
+            re.I | re.S,
+        )
+        for match in pattern.finditer(page):
+            url = unwrap_duckduckgo_url(match.group(1))
+            title = textify(match.group(2))
+            snippet = textify(match.group(3))
+            if not url or not title:
+                continue
+            results.append({"title": title, "url": url, "snippet": snippet})
+            if len(results) >= max_results:
+                break
+
+        if results:
+            return results
+
+        # Fallback for lite/html variants where snippet markup differs.
+        link_pattern = re.compile(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', re.I | re.S)
+        seen = set()
+        for match in link_pattern.finditer(page):
+            url = unwrap_duckduckgo_url(match.group(1))
+            title = textify(match.group(2))
+            if not url.startswith(("http://", "https://")) or "duckduckgo.com" in url:
+                continue
+            key = (url, title)
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append({"title": title, "url": url, "snippet": ""})
+            if len(results) >= max_results:
+                break
+        return results
+
+    def search(query, max_results, language):
+        params = {"q": query}
+        if language:
+            params["kl"] = language
+        url = "https://duckduckgo.com/html/?" + urllib.parse.urlencode(params)
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (CyberStrikeAI web_search)",
+                "Accept": "text/html,application/xhtml+xml",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            charset = resp.headers.get_content_charset() or "utf-8"
+            page = resp.read().decode(charset, errors="replace")
+        return parse_duckduckgo(page, max_results)
+
+    try:
+        query = sys.argv[1].strip() if len(sys.argv) > 1 else ""
+        max_results = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else 8
+        language = sys.argv[3].strip() if len(sys.argv) > 3 else "cn-zh"
+        max_results = max(1, min(max_results, 20))
+
+        if not query:
+            raise ValueError("query is required")
+
+        results = search(query, max_results, language)
+        print(json.dumps({
+            "status": "success",
+            "query": query,
+            "result_count": len(results),
+            "results": results,
+            "note": "Use the returned URLs as public references; verify exploit steps against the target before concluding.",
+        }, ensure_ascii=False, indent=2))
+    except Exception as exc:
+        print(json.dumps({
+            "status": "error",
+            "message": str(exc),
+            "suggestion": "Check outbound network connectivity or retry with a more specific query.",
+        }, ensure_ascii=False, indent=2))
+        sys.exit(1)
+enabled: true
+short_description: "公开 Web 搜索，用于 CVE/CNVD、漏洞编号、靶场题名、利用链资料检索"
+description: |
+  公开 Web 搜索工具。适合在遇到 CVE、CNVD、漏洞名称、靶场题名、产品版本、报错文本时，先检索公开资料、漏洞分析、官方公告和 writeup，再进入目标验证。
+
+  **建议用法：**
+  - `query="CNVD-2017-02833 fastjson 1.2.24 RCE"`
+  - `query="Fastjson CNVD-2017-02833 payload TemplatesImpl"`
+  - `query="fastjson 1.2.24 靶场 flag writeup"`
+
+  **边界：**
+  - 该工具只返回搜索结果摘要和 URL，不替代对目标的实际验证。
+  - 若搜索失败，检查服务器出网能力，或改用 `execute-python-script` / `http-framework-test` 直接访问已知 URL。
+parameters:
+  - name: "query"
+    type: "string"
+    description: "搜索关键词。遇到 CVE/CNVD/漏洞编号/靶场题名时，应包含编号、产品名、版本和利用目标。"
+    required: true
+    position: 0
+    format: "positional"
+  - name: "max_results"
+    type: "int"
+    description: "返回结果数量，范围 1-20。"
+    required: false
+    default: 8
+    position: 1
+    format: "positional"
+  - name: "language"
+    type: "string"
+    description: "DuckDuckGo 区域语言参数，例如 cn-zh、us-en。"
+    required: false
+    default: "cn-zh"
+    position: 2
+    format: "positional"

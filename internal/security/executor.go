@@ -322,9 +322,15 @@ func (e *Executor) buildCommandArgs(toolName string, toolConfig *config.ToolConf
 		// 检查是否有 scan_type 参数，如果有则替换默认的扫描类型参数
 		hasScanType := false
 		var scanTypeValue string
-		if scanType, ok := args["scan_type"].(string); ok && scanType != "" {
-			hasScanType = true
-			scanTypeValue = scanType
+		for _, param := range toolConfig.Parameters {
+			if param.Name != "scan_type" {
+				continue
+			}
+			if scanType, ok := e.getParamValue(args, param).(string); ok && strings.TrimSpace(scanType) != "" {
+				hasScanType = true
+				scanTypeValue = scanType
+			}
+			break
 		}
 
 		// 添加固定参数（如果指定了 scan_type，可能需要过滤掉默认的扫描类型参数）
@@ -349,13 +355,23 @@ func (e *Executor) buildCommandArgs(toolName string, toolConfig *config.ToolConf
 
 		// 对于需要子命令的工具（如 gobuster dir），position 0 必须紧跟在命令名后、所有 flag 之前
 		for _, param := range positionalParams {
-			if param.Name == "additional_args" || param.Name == "scan_type" || param.Name == "action" {
+			if param.Name == "additional_args" || param.Name == "scan_type" {
 				continue
 			}
 			if param.Position != nil && *param.Position == 0 {
 				value := e.getParamValue(args, param)
-				if value == nil && param.Default != nil {
-					value = param.Default
+				if value == nil {
+					if param.Required {
+						e.logger.Warn("缺少必需的位置参数",
+							zap.String("tool", toolName),
+							zap.String("param", param.Name),
+							zap.Int("position", *param.Position),
+						)
+						return []string{}
+					}
+					if param.Default != nil {
+						value = param.Default
+					}
 				}
 				if value != nil {
 					cmdArgs = append(cmdArgs, e.formatParamValue(param, value))
@@ -483,8 +499,7 @@ func (e *Executor) buildCommandArgs(toolName string, toolConfig *config.ToolConf
 			}
 			for _, param := range positionalParams {
 				// 跳过特殊参数，它们会在后面单独处理
-				// action 参数仅用于工具内部逻辑，不传递给命令
-				if param.Name == "additional_args" || param.Name == "scan_type" || param.Name == "action" {
+				if param.Name == "additional_args" || param.Name == "scan_type" {
 					continue
 				}
 
@@ -651,6 +666,11 @@ func (e *Executor) getParamValue(args map[string]interface{}, param config.Param
 	// 从参数中获取值
 	if value, ok := args[param.Name]; ok && value != nil {
 		return value
+	}
+	for _, alias := range param.Aliases {
+		if value, ok := args[alias]; ok && value != nil {
+			return value
+		}
 	}
 
 	// 如果参数是必需的但没有提供，返回 nil（让上层处理错误）

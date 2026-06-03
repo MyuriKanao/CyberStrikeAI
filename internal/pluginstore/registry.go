@@ -4,11 +4,17 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 )
+
+type reservedTool struct {
+	Command string
+	Strict  bool
+}
 
 type Manager struct {
 	rootDir       string
@@ -16,7 +22,7 @@ type Manager struct {
 	installedDir  string
 	registryPath  string
 	githubToken   string
-	reservedTools map[string]struct{}
+	reservedTools map[string]reservedTool
 }
 
 func New(rootDir string) *Manager {
@@ -49,12 +55,26 @@ func (m *Manager) SetReservedToolNames(names []string) {
 	if m == nil {
 		return
 	}
-	m.reservedTools = make(map[string]struct{}, len(names))
+	m.reservedTools = make(map[string]reservedTool, len(names))
 	for _, name := range names {
 		name = strings.TrimSpace(name)
 		if name != "" {
-			m.reservedTools[name] = struct{}{}
+			m.reservedTools[name] = reservedTool{Strict: true}
 		}
+	}
+}
+
+func (m *Manager) SetReservedToolCommands(commands map[string]string) {
+	if m == nil {
+		return
+	}
+	m.reservedTools = make(map[string]reservedTool, len(commands))
+	for name, command := range commands {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		m.reservedTools[name] = reservedTool{Command: strings.TrimSpace(command)}
 	}
 }
 
@@ -175,7 +195,7 @@ func (m *Manager) ToolNameConflicts(pluginID string, toolNames []string) []strin
 		if name == "" {
 			continue
 		}
-		if _, ok := m.reservedTools[name]; ok {
+		if reserved, ok := m.reservedTools[name]; ok && reserved.conflicts() {
 			conflicts[name] = struct{}{}
 		}
 	}
@@ -200,6 +220,25 @@ func (m *Manager) ToolNameConflicts(pluginID string, toolNames []string) []strin
 		}
 	}
 	return sortedKeys(conflicts)
+}
+
+func (r reservedTool) conflicts() bool {
+	if r.Strict {
+		return true
+	}
+	command := strings.TrimSpace(r.Command)
+	if command == "" {
+		return true
+	}
+	if strings.HasPrefix(command, "internal:") {
+		return true
+	}
+	if filepath.IsAbs(command) || strings.ContainsAny(command, `/\`) {
+		info, err := os.Stat(command)
+		return err == nil && !info.IsDir()
+	}
+	_, err := exec.LookPath(command)
+	return err == nil
 }
 
 func sortedKeys(values map[string]struct{}) []string {

@@ -4959,6 +4959,11 @@ header {
     margin-bottom: 10px;
 }
 
+.plugin-store-plugin.is-installing {
+    border-color: var(--accent-color);
+    background: rgba(0, 102, 255, 0.04);
+}
+
 .plugin-store-row:last-child,
 .plugin-store-plugin:last-child {
     margin-bottom: 0;
@@ -5018,6 +5023,45 @@ header {
     color: var(--text-primary);
     font-size: 0.875rem;
     line-height: 1.5;
+}
+
+.plugin-store-plugin-progress {
+    margin: 8px 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    color: var(--accent-color);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.45;
+}
+
+.plugin-store-plugin-message {
+    margin: 8px 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.45;
+}
+
+.plugin-store-plugin-message.is-success {
+    color: var(--success-color);
+}
+
+.plugin-store-plugin-message.is-error {
+    color: var(--error-color);
+}
+
+.plugin-store-plugin-message.is-info {
+    color: var(--accent-color);
+}
+
+.plugin-store-plugin .btn-small.is-loading {
+    cursor: wait;
+    opacity: 0.85;
 }
 
 .plugin-store-plugin-meta {
