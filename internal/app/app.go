@@ -25,6 +25,7 @@ import (
 	"cyberstrike-ai/internal/logger"
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/mcp/builtin"
+	"cyberstrike-ai/internal/pluginstore"
 	"cyberstrike-ai/internal/robot"
 	"cyberstrike-ai/internal/security"
 	"cyberstrike-ai/internal/skillpackage"
@@ -43,6 +44,7 @@ type App struct {
 	router             *gin.Engine
 	mcpServer          *mcp.Server
 	externalMCPMgr     *mcp.ExternalMCPManager
+	pluginStore        *pluginstore.Manager
 	agent              *agent.Agent
 	executor           *security.Executor
 	db                 *database.DB
@@ -103,6 +105,11 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	// 创建MCP服务器（带数据库持久化）
 	mcpServer := mcp.NewServerWithStorage(log.Logger, db)
 	mcpServer.ConfigureHTTPToolCallTimeoutFromAgentMinutes(cfg.Agent.ToolTimeoutMinutes)
+
+	pluginStoreMgr, err := initializePluginStore(cfg, configPath, log.Logger)
+	if err != nil {
+		return nil, fmt.Errorf("初始化插件商店失败: %w", err)
+	}
 
 	// 创建安全工具执行器
 	executor := security.NewExecutor(&cfg.Security, mcpServer, log.Logger)
@@ -362,6 +369,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	agentHandler.SetHitlToolWhitelistSaver(configHandler)
 	externalMCPHandler := handler.NewExternalMCPHandler(externalMCPMgr, cfg, configPath, log.Logger)
 	externalMCPHandler.SetAudit(auditSvc)
+	pluginStoreHandler := handler.NewPluginStoreHandler(pluginStoreMgr, cfg, configPath, mcpServer, executor, log.Logger)
 	roleHandler := handler.NewRoleHandler(cfg, configPath, log.Logger)
 	roleHandler.SetAudit(auditSvc)
 	skillsHandler := handler.NewSkillsHandler(cfg, configPath, log.Logger)
@@ -396,6 +404,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		router:             router,
 		mcpServer:          mcpServer,
 		externalMCPMgr:     externalMCPMgr,
+		pluginStore:        pluginStoreMgr,
 		agent:              agent,
 		executor:           executor,
 		db:                 db,
@@ -505,6 +514,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		groupHandler,
 		configHandler,
 		externalMCPHandler,
+		pluginStoreHandler,
 		attackChainHandler,
 		app, // 传递 App 实例以便动态获取 knowledgeHandler
 		vulnerabilityHandler,
@@ -525,6 +535,80 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 
 	return app, nil
 
+}
+
+func initializePluginStore(cfg *config.Config, configPath string, logger *zap.Logger) (*pluginstore.Manager, error) {
+	if cfg == nil || !cfg.PluginStore.EnabledEffective() {
+		return nil, nil
+	}
+	rootDir := cfg.PluginStore.RootDirEffective()
+	if !filepath.IsAbs(rootDir) {
+		baseDir := filepath.Dir(strings.TrimSpace(configPath))
+		if baseDir == "" || baseDir == "." {
+			baseDir = "."
+		}
+		rootDir = filepath.Join(baseDir, rootDir)
+	}
+	manager := pluginstore.New(rootDir)
+	manager.SetGitHubToken(cfg.PluginStore.GitHubToken)
+	manager.SetReservedToolNames(toolConfigNames(cfg.Security.Tools))
+	if err := manager.Ensure(); err != nil {
+		return nil, err
+	}
+	cfg.Security.ExtraPathDirs = mergePathDirs(cfg.Security.ExtraPathDirs, manager.RuntimeBinDirs())
+	pluginTools, err := manager.LoadInstalledTools()
+	if err != nil {
+		return nil, err
+	}
+	merged, skipped := pluginstore.MergeTools(cfg.Security.Tools, pluginTools)
+	cfg.Security.Tools = merged
+	if logger != nil {
+		logger.Info("插件商店初始化完成",
+			zap.String("root", manager.RootDir()),
+			zap.Int("plugin_tools", len(pluginTools)),
+			zap.Int("skipped_duplicate_tools", len(skipped)),
+		)
+		if len(skipped) > 0 {
+			logger.Warn("插件工具名称与现有工具冲突，已跳过",
+				zap.Strings("tools", skipped),
+			)
+		}
+	}
+	return manager, nil
+}
+
+func toolConfigNames(tools []config.ToolConfig) []string {
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		name := strings.TrimSpace(tool.Name)
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+func mergePathDirs(base []string, extra []string) []string {
+	out := append([]string(nil), base...)
+	seen := make(map[string]struct{}, len(base)+len(extra))
+	for _, dir := range out {
+		key := strings.TrimSpace(dir)
+		if key != "" {
+			seen[key] = struct{}{}
+		}
+	}
+	for _, dir := range extra {
+		key := strings.TrimSpace(dir)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+	}
+	return out
 }
 
 // mcpHandlerWithAuth 在鉴权通过后转发到 MCP 处理；若配置了 auth_header 则校验请求头，否则直接放行
@@ -751,6 +835,7 @@ func setupRoutes(
 	groupHandler *handler.GroupHandler,
 	configHandler *handler.ConfigHandler,
 	externalMCPHandler *handler.ExternalMCPHandler,
+	pluginStoreHandler *handler.PluginStoreHandler,
 	attackChainHandler *handler.AttackChainHandler,
 	app *App, // 传递 App 实例以便动态获取 knowledgeHandler
 	vulnerabilityHandler *handler.VulnerabilityHandler,
@@ -913,6 +998,16 @@ func setupRoutes(
 		protected.DELETE("/external-mcp/:name", externalMCPHandler.DeleteExternalMCP)
 		protected.POST("/external-mcp/:name/start", externalMCPHandler.StartExternalMCP)
 		protected.POST("/external-mcp/:name/stop", externalMCPHandler.StopExternalMCP)
+
+		// 插件商店
+		protected.GET("/plugin-store/settings", pluginStoreHandler.GetSettings)
+		protected.PUT("/plugin-store/settings", pluginStoreHandler.UpdateSettings)
+		protected.GET("/plugin-store/sources", pluginStoreHandler.GetSources)
+		protected.POST("/plugin-store/sources", pluginStoreHandler.AddSource)
+		protected.GET("/plugin-store/catalog", pluginStoreHandler.GetCatalog)
+		protected.GET("/plugin-store/installed", pluginStoreHandler.GetInstalled)
+		protected.POST("/plugin-store/install", pluginStoreHandler.InstallPlugin)
+		protected.POST("/plugin-store/reload", pluginStoreHandler.Reload)
 
 		// 攻击链可视化
 		protected.GET("/attack-chain/:conversationId", attackChainHandler.GetAttackChain)

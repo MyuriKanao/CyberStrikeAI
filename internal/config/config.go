@@ -24,6 +24,7 @@ type Config struct {
 	Agent       AgentConfig           `yaml:"agent"`
 	Hitl        HitlConfig            `yaml:"hitl,omitempty" json:"hitl,omitempty"`
 	Security    SecurityConfig        `yaml:"security"`
+	PluginStore PluginStoreConfig     `yaml:"plugin_store,omitempty" json:"plugin_store,omitempty"`
 	Database    DatabaseConfig        `yaml:"database"`
 	Auth        AuthConfig            `yaml:"auth"`
 	Audit       AuditConfig           `yaml:"audit,omitempty" json:"audit,omitempty"`
@@ -582,6 +583,26 @@ type SecurityConfig struct {
 	ToolsDir            string       `yaml:"tools_dir,omitempty"`             // 工具配置文件目录（新方式）
 	ToolDescriptionMode string       `yaml:"tool_description_mode,omitempty"` // 工具描述模式: "short" | "full"，默认 short
 	ExtraPathDirs       []string     `yaml:"extra_path_dirs,omitempty" json:"extra_path_dirs,omitempty"`
+}
+
+type PluginStoreConfig struct {
+	Enabled     *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	RootDir     string `yaml:"root_dir,omitempty" json:"root_dir,omitempty"`
+	GitHubToken string `yaml:"github_token,omitempty" json:"-"`
+}
+
+func (c PluginStoreConfig) EnabledEffective() bool {
+	if c.Enabled == nil {
+		return true
+	}
+	return *c.Enabled
+}
+
+func (c PluginStoreConfig) RootDirEffective() string {
+	if strings.TrimSpace(c.RootDir) == "" {
+		return filepath.Join("data", "plugins")
+	}
+	return c.RootDir
 }
 
 type DatabaseConfig struct {
@@ -1248,6 +1269,9 @@ func Default() *Config {
 		Security: SecurityConfig{
 			Tools:    []ToolConfig{}, // 工具配置应该从 config.yaml 或 tools/ 目录加载
 			ToolsDir: "tools",        // 默认工具目录
+		},
+		PluginStore: PluginStoreConfig{
+			RootDir: filepath.Join("data", "plugins"),
 		},
 		Database: DatabaseConfig{
 			Path:            "data/conversations.db",

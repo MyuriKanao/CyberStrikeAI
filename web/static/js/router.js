@@ -57,7 +57,7 @@ function initRouter() {
     if (hash) {
         const hashParts = hash.split('?');
         const pageId = hashParts[0];
-        if (pageId && ['dashboard', 'chat', 'hitl', 'info-collect', 'projects', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'skills-monitor', 'skills-management', 'agents-management', 'settings', 'tasks', 'c2', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
+        if (pageId && ['dashboard', 'chat', 'hitl', 'info-collect', 'projects', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'plugin-store', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'skills-monitor', 'skills-management', 'agents-management', 'settings', 'tasks', 'c2', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
             switchPage(pageId);
             if (pageId === 'chat') {
                 scheduleChatConversationFromHash(500);
@@ -112,7 +112,7 @@ function updateNavState(pageId) {
     });
     
     // 设置活动状态
-    if (pageId === 'mcp-monitor' || pageId === 'mcp-management') {
+    if (pageId === 'mcp-monitor' || pageId === 'mcp-management' || pageId === 'plugin-store') {
         // MCP子菜单项
         const mcpItem = document.querySelector('.nav-item[data-page="mcp"]');
         if (mcpItem) {
@@ -406,6 +406,13 @@ async function initPage(pageId) {
                 });
             }
             break;
+        case 'plugin-store':
+            if (typeof loadPluginStorePage === 'function') {
+                loadPluginStorePage().catch(err => {
+                    console.warn('加载插件商店失败:', err);
+                });
+            }
+            break;
         case 'projects':
             if (typeof initProjectsPage === 'function') {
                 initProjectsPage();
@@ -514,7 +521,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const hashParts = hash.split('?');
         const pageId = hashParts[0];
         
-        if (pageId && ['dashboard', 'chat', 'hitl', 'info-collect', 'tasks', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'skills-monitor', 'skills-management', 'agents-management', 'settings', 'c2', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
+        if (pageId && ['dashboard', 'chat', 'hitl', 'info-collect', 'tasks', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'plugin-store', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'skills-monitor', 'skills-management', 'agents-management', 'settings', 'c2', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
             switchPage(pageId);
             if (pageId === 'chat') {
                 scheduleChatConversationFromHash(200);
@@ -573,4 +580,3 @@ function initConversationSidebarState() {
 
 // 导出函数供其他脚本使用（与上方尽早绑定保持一致，便于外部脚本探测）
 window.currentPage = function() { return currentPage; };
-

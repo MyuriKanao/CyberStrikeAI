@@ -239,6 +239,9 @@
                             <div class="nav-submenu-item" data-page="mcp-management" onclick="switchPage('mcp-management')">
                                 <span data-i18n="nav.mcpManagement">MCP管理</span>
                             </div>
+                            <div class="nav-submenu-item" data-page="plugin-store" onclick="switchPage('plugin-store')">
+                                <span>插件商店</span>
+                            </div>
                         </div>
                     </div>
                     <div class="nav-item nav-item-has-submenu" data-page="knowledge">
@@ -1210,6 +1213,67 @@
                                 <div id="external-mcp-list" class="external-mcp-list"></div>
                             </div>
                         </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 插件商店页面 -->
+                <div id="page-plugin-store" class="page">
+                    <div class="page-header">
+                        <h2>插件商店</h2>
+                        <div class="page-header-actions">
+                            <button class="btn-secondary" onclick="loadPluginStorePage()">刷新</button>
+                            <button class="btn-primary" onclick="reloadPluginTools()">重载插件工具</button>
+                        </div>
+                    </div>
+                    <div class="page-content plugin-store-page">
+                        <section class="plugin-store-toolbar">
+                            <div class="plugin-store-source-form">
+                                <label class="plugin-store-field">
+                                    <span>源名称</span>
+                                    <input type="text" id="plugin-store-source-name" placeholder="official" value="official">
+                                </label>
+                                <label class="plugin-store-field plugin-store-field-wide">
+                                    <span>Git 地址</span>
+                                    <input type="text" id="plugin-store-source-url" placeholder="https://github.com/MyuriKanao/CyberStrikeAI-Plugins.git">
+                                </label>
+                                <label class="plugin-store-field plugin-store-field-token">
+                                    <span>GitHub Token</span>
+                                    <input type="password" id="plugin-store-github-token" placeholder="保存后不回显" autocomplete="off">
+                                </label>
+                                <label class="plugin-store-clear-token">
+                                    <input type="checkbox" id="plugin-store-clear-token">
+                                    <span>清空 Token</span>
+                                </label>
+                                <div class="plugin-store-actions">
+                                    <button class="btn-secondary" type="button" onclick="savePluginStoreSettings()">保存 Token</button>
+                                    <button class="btn-primary" type="button" onclick="syncPluginStoreSource()">同步源</button>
+                                </div>
+                            </div>
+                            <div class="plugin-store-status-row">
+                                <span id="plugin-store-token-status" class="plugin-store-token-status">Token 状态：读取中</span>
+                                <span id="plugin-store-status" class="plugin-store-status" role="status"></span>
+                            </div>
+                        </section>
+                        <div class="plugin-store-layout">
+                            <section class="plugin-store-panel plugin-store-sources-panel">
+                                <div class="plugin-store-panel-header">
+                                    <h3>插件源</h3>
+                                </div>
+                                <div id="plugin-store-sources" class="plugin-store-list"></div>
+                            </section>
+                            <section class="plugin-store-panel plugin-store-catalog-panel">
+                                <div class="plugin-store-panel-header">
+                                    <h3>可安装插件</h3>
+                                </div>
+                                <div id="plugin-store-catalog" class="plugin-store-list"></div>
+                            </section>
+                            <section class="plugin-store-panel plugin-store-installed-panel">
+                                <div class="plugin-store-panel-header">
+                                    <h3>已安装</h3>
+                                </div>
+                                <div id="plugin-store-installed" class="plugin-store-list"></div>
+                            </section>
                         </div>
                     </div>
                 </div>
@@ -4312,6 +4376,7 @@
     <script src="/static/js/chat.js"></script>
     <script src="/static/js/hitl.js"></script>
     <script src="/static/js/settings.js"></script>
+    <script src="/static/js/plugin_store.js"></script>
     <script src="/static/js/audit.js"></script>
     <script src="/static/js/wechat-robot.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm@4.19.0/lib/xterm.js"></script>
