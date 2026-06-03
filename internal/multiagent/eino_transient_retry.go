@@ -3,7 +3,6 @@ package multiagent
 import (
 	"context"
 	"errors"
-	"io"
 	"strings"
 	"time"
 
@@ -22,10 +21,6 @@ const (
 // 用户取消、超时、迭代上限等由 run loop 单独处理，不在此列。
 func isEinoTransientRunError(err error) bool {
 	if err == nil {
-		return false
-	}
-	// io.EOF 常见于流式正常收尾，不应触发分段重试。
-	if errors.Is(err, io.EOF) {
 		return false
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -66,6 +61,7 @@ func isEinoTransientRunError(err error) bool {
 		"tls handshake timeout",
 		"stream error",
 		"unexpected eof",
+		`": eof`, // net/http: Post "url": EOF (often wraps io.EOF)
 		"unexpected end of json",
 		"status code: 406",
 		"status code: 502",
