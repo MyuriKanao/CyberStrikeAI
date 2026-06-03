@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -151,8 +152,7 @@ func (e *Executor) ExecuteTool(ctx context.Context, toolName string, args map[st
 	}
 
 	// 执行命令
-	cmd := exec.CommandContext(ctx, toolConfig.Command, cmdArgs...)
-	applyDefaultTerminalEnv(cmd)
+	cmd := e.newCommand(ctx, toolConfig.Command, cmdArgs...)
 	_ = prepareShellCmdSession(cmd)
 
 	e.logger.Info("执行安全工具",
@@ -169,8 +169,7 @@ func (e *Executor) ExecuteTool(ctx context.Context, toolName string, args map[st
 			e.logger.Info("检测到工具需要 TTY，使用 PTY 重试",
 				zap.String("tool", toolName),
 			)
-			cmd2 := exec.CommandContext(ctx, toolConfig.Command, cmdArgs...)
-			applyDefaultTerminalEnv(cmd2)
+			cmd2 := e.newCommand(ctx, toolConfig.Command, cmdArgs...)
 			_ = prepareShellCmdSession(cmd2)
 			output, err = runCommandWithPTY(ctx, cmd2, cb)
 		}
@@ -182,8 +181,7 @@ func (e *Executor) ExecuteTool(ctx context.Context, toolName string, args map[st
 			e.logger.Info("检测到工具需要 TTY，使用 PTY 重试",
 				zap.String("tool", toolName),
 			)
-			cmd2 := exec.CommandContext(ctx, toolConfig.Command, cmdArgs...)
-			applyDefaultTerminalEnv(cmd2)
+			cmd2 := e.newCommand(ctx, toolConfig.Command, cmdArgs...)
 			_ = prepareShellCmdSession(cmd2)
 			output, err = runCommandWithPTY(ctx, cmd2, nil)
 		}
@@ -829,12 +827,11 @@ func (e *Executor) executeSystemCommand(ctx context.Context, args map[string]int
 	// 构建命令
 	var cmd *exec.Cmd
 	if workDir != "" {
-		cmd = exec.CommandContext(ctx, shell, "-c", command)
+		cmd = e.newCommand(ctx, shell, "-c", command)
 		cmd.Dir = workDir
 	} else {
-		cmd = exec.CommandContext(ctx, shell, "-c", command)
+		cmd = e.newCommand(ctx, shell, "-c", command)
 	}
-	applyDefaultTerminalEnv(cmd)
 	_ = prepareShellCmdSession(cmd)
 
 	// 执行命令
@@ -859,12 +856,11 @@ func (e *Executor) executeSystemCommand(ctx context.Context, args map[string]int
 		// 创建新命令来获取PID
 		var pidCmd *exec.Cmd
 		if workDir != "" {
-			pidCmd = exec.CommandContext(ctx, shell, "-c", pidCommand)
+			pidCmd = e.newCommand(ctx, shell, "-c", pidCommand)
 			pidCmd.Dir = workDir
 		} else {
-			pidCmd = exec.CommandContext(ctx, shell, "-c", pidCommand)
+			pidCmd = e.newCommand(ctx, shell, "-c", pidCommand)
 		}
-		applyDefaultTerminalEnv(pidCmd)
 		_ = prepareShellCmdSession(pidCmd)
 
 		// 获取stdout管道
@@ -980,11 +976,10 @@ func (e *Executor) executeSystemCommand(ctx context.Context, args map[string]int
 		output, err = streamCommandOutput(ctx, cmd, cb)
 		if err != nil && shouldRetryWithPTY(output) {
 			e.logger.Info("检测到系统命令需要 TTY，使用 PTY 重试")
-			cmd2 := exec.CommandContext(ctx, shell, "-c", command)
+			cmd2 := e.newCommand(ctx, shell, "-c", command)
 			if workDir != "" {
 				cmd2.Dir = workDir
 			}
-			applyDefaultTerminalEnv(cmd2)
 			_ = prepareShellCmdSession(cmd2)
 			output, err = runCommandWithPTY(ctx, cmd2, cb)
 		}
@@ -994,11 +989,10 @@ func (e *Executor) executeSystemCommand(ctx context.Context, args map[string]int
 		err = err2
 		if err != nil && shouldRetryWithPTY(output) {
 			e.logger.Info("检测到系统命令需要 TTY，使用 PTY 重试")
-			cmd2 := exec.CommandContext(ctx, shell, "-c", command)
+			cmd2 := e.newCommand(ctx, shell, "-c", command)
 			if workDir != "" {
 				cmd2.Dir = workDir
 			}
-			applyDefaultTerminalEnv(cmd2)
 			_ = prepareShellCmdSession(cmd2)
 			output, err = runCommandWithPTY(ctx, cmd2, nil)
 		}
@@ -1120,9 +1114,93 @@ func streamCommandOutput(ctx context.Context, cmd *exec.Cmd, cb ToolOutputCallba
 	return outBuilder.String(), waitErr
 }
 
-// applyDefaultTerminalEnv 为外部工具补齐常见的终端环境变量。
-// 注意：这不会创建 TTY，只是减少某些工具在非交互环境下的“奇怪排版/检测失败”。
+func (e *Executor) newCommand(ctx context.Context, command string, args ...string) *exec.Cmd {
+	pathDirs := e.effectivePathDirs()
+	cmd := exec.CommandContext(ctx, resolveExecutablePath(command, pathDirs), args...)
+	applyDefaultTerminalEnvWithPathDirs(cmd, pathDirs)
+	return cmd
+}
+
+func (e *Executor) effectivePathDirs() []string {
+	var dirs []string
+	if e != nil && e.config != nil {
+		dirs = append(dirs, e.config.ExtraPathDirs...)
+	}
+	dirs = append(dirs, filepath.SplitList(os.Getenv("PATH"))...)
+	dirs = append(dirs, defaultExecutablePathDirs()...)
+	return normalizePathDirs(dirs)
+}
+
+func defaultExecutablePathDirs() []string {
+	return []string{
+		"data/plugins/runtime/bin",
+		"data/tool-runtime/bin",
+		"/app/data/plugins/runtime/bin",
+		"/app/data/tool-runtime/bin",
+		"/opt/cyberstrike-ai/plugins/bin",
+		"/opt/tools/bin",
+		"/usr/local/sbin",
+		"/usr/local/bin",
+		"/usr/sbin",
+		"/usr/bin",
+		"/sbin",
+		"/bin",
+		"/opt/homebrew/bin",
+	}
+}
+
+func normalizePathDirs(dirs []string) []string {
+	out := make([]string, 0, len(dirs))
+	seen := make(map[string]struct{}, len(dirs))
+	for _, dir := range dirs {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		if !filepath.IsAbs(dir) {
+			if abs, err := filepath.Abs(dir); err == nil {
+				dir = abs
+			}
+		}
+		dir = filepath.Clean(dir)
+		key := dir
+		if runtime.GOOS == "windows" {
+			key = strings.ToLower(key)
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, dir)
+	}
+	return out
+}
+
+func resolveExecutablePath(command string, pathDirs []string) string {
+	command = strings.TrimSpace(command)
+	if command == "" || filepath.IsAbs(command) || strings.ContainsAny(command, `/\`) {
+		return command
+	}
+	for _, dir := range pathDirs {
+		candidate := filepath.Join(dir, command)
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		if runtime.GOOS == "windows" || info.Mode().Perm()&0o111 != 0 {
+			return candidate
+		}
+	}
+	return command
+}
+
+// applyDefaultTerminalEnv 为外部工具补齐 PATH 与常见终端环境变量。
+// 注意：这不会创建 TTY，只是减少某些工具在非交互环境下的“找不到命令/检测失败/奇怪排版”。
 func applyDefaultTerminalEnv(cmd *exec.Cmd) {
+	applyDefaultTerminalEnvWithPathDirs(cmd, normalizePathDirs(append(filepath.SplitList(os.Getenv("PATH")), defaultExecutablePathDirs()...)))
+}
+
+func applyDefaultTerminalEnvWithPathDirs(cmd *exec.Cmd, pathDirs []string) {
 	if cmd == nil {
 		return
 	}
@@ -1130,11 +1208,14 @@ func applyDefaultTerminalEnv(cmd *exec.Cmd) {
 	if cmd.Env == nil {
 		cmd.Env = os.Environ()
 	}
+	if len(pathDirs) > 0 {
+		cmd.Env = upsertEnv(cmd.Env, "PATH", strings.Join(pathDirs, string(os.PathListSeparator)))
+	}
 	// 如果用户已设置 TERM/COLUMNS/LINES，则不覆盖
 	has := func(k string) bool {
-		prefix := k + "="
 		for _, e := range cmd.Env {
-			if strings.HasPrefix(e, prefix) {
+			key, _, ok := strings.Cut(e, "=")
+			if ok && envKeyEqual(key, k) {
 				return true
 			}
 		}
@@ -1149,6 +1230,25 @@ func applyDefaultTerminalEnv(cmd *exec.Cmd) {
 	if !has("LINES") {
 		cmd.Env = append(cmd.Env, "LINES=40")
 	}
+}
+
+func upsertEnv(env []string, key string, value string) []string {
+	entry := key + "=" + value
+	for i, e := range env {
+		existingKey, _, ok := strings.Cut(e, "=")
+		if ok && envKeyEqual(existingKey, key) {
+			env[i] = entry
+			return env
+		}
+	}
+	return append(env, entry)
+}
+
+func envKeyEqual(a string, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 func shouldRetryWithPTY(output string) bool {
