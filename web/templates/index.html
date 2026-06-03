@@ -2475,6 +2475,89 @@
                                     </div>
                                 </div>
 
+                                <!-- Vision 视觉分析 -->
+                                <div class="settings-subsection">
+                                    <h4 data-i18n="settingsBasic.visionConfig">视觉分析（analyze_image）</h4>
+                                    <div class="settings-form">
+                                        <div class="form-group">
+                                            <label class="checkbox-label">
+                                                <input type="checkbox" id="vision-enabled" class="modern-checkbox" onchange="syncVisionFormEnabled()" />
+                                                <span class="checkbox-custom"></span>
+                                                <span class="checkbox-text" data-i18n="settingsBasic.visionEnabled">启用视觉分析工具 analyze_image</span>
+                                            </label>
+                                            <small class="form-hint" data-i18n="settingsBasic.visionEnabledHint">启用后注册 MCP 工具；图片仅在单次 VL 调用中出现，Agent 上下文只保留文字摘要。</small>
+                                        </div>
+                                        <div id="vision-fields-panel">
+                                            <div class="form-group">
+                                                <label for="vision-provider" data-i18n="settingsBasic.provider">提供商</label>
+                                                <select id="vision-provider" style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color, #e2e8f0); border-radius: 6px; background: var(--card-bg, #fff); color: var(--text-color, #2d3748); font-size: 0.875rem;">
+                                                    <option value="">OpenAI 配置（留空复用）</option>
+                                                    <option value="openai">OpenAI / 兼容 OpenAI 协议</option>
+                                                    <option value="claude">Claude (Anthropic Messages API)</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="vision-base-url" data-i18n="settingsBasic.baseUrl">Base URL</label>
+                                                <input type="text" id="vision-base-url" data-i18n="settingsBasic.visionBaseUrlPlaceholder" data-i18n-attr="placeholder" placeholder="留空则复用 OpenAI Base URL" />
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="vision-api-key" data-i18n="settingsBasic.apiKey">API Key</label>
+                                                <input type="password" id="vision-api-key" data-i18n="settingsBasic.visionApiKeyPlaceholder" data-i18n-attr="placeholder" placeholder="留空则复用 OpenAI API Key" />
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="vision-model"><span data-i18n="settingsBasic.visionModel">视觉模型</span> <span style="color: red;">*</span></label>
+                                                <input type="text" id="vision-model" data-i18n="settingsBasic.visionModelPlaceholder" data-i18n-attr="placeholder" placeholder="qwen-vl-max" />
+                                            </div>
+                                            <details style="margin-top: 8px;">
+                                                <summary style="cursor: pointer; font-size: 0.875rem; color: var(--accent-color, #3182ce);" data-i18n="settingsBasic.visionAdvanced">高级：预处理与限制</summary>
+                                                <div style="margin-top: 12px;">
+                                                    <div class="form-group">
+                                                        <label for="vision-max-image-bytes" data-i18n="settingsBasic.visionMaxImageBytes">原始文件上限（字节）</label>
+                                                        <input type="number" id="vision-max-image-bytes" min="0" step="1024" placeholder="5242880" />
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="vision-max-dimension" data-i18n="settingsBasic.visionMaxDimension">长边缩放像素</label>
+                                                        <input type="number" id="vision-max-dimension" min="256" step="1" placeholder="2048" />
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="vision-jpeg-quality" data-i18n="settingsBasic.visionJpegQuality">JPEG 质量</label>
+                                                        <input type="number" id="vision-jpeg-quality" min="60" max="100" step="1" placeholder="82" />
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="vision-max-payload-bytes" data-i18n="settingsBasic.visionMaxPayloadBytes">送 API 体积上限（字节）</label>
+                                                        <input type="number" id="vision-max-payload-bytes" min="0" step="1024" placeholder="524288" />
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="vision-skip-preprocess-bytes" data-i18n="settingsBasic.visionSkipPreprocessBytes">低于该字节可原图直传</label>
+                                                        <input type="number" id="vision-skip-preprocess-bytes" min="0" step="1024" placeholder="2097152" />
+                                                        <small class="form-hint" data-i18n="settingsBasic.visionSkipPreprocessHint">0 表示始终 JPEG 压缩；需同时满足长边与 payload 限制。</small>
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="vision-detail" data-i18n="settingsBasic.visionDetail">Image detail</label>
+                                                        <select id="vision-detail" style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color, #e2e8f0); border-radius: 6px;">
+                                                            <option value="low">low</option>
+                                                            <option value="auto">auto</option>
+                                                            <option value="high">high</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="vision-timeout-seconds" data-i18n="settingsBasic.visionTimeout">超时（秒）</label>
+                                                        <input type="number" id="vision-timeout-seconds" min="5" step="1" placeholder="60" />
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="vision-allowed-roots" data-i18n="settingsBasic.visionAllowedRoots">额外允许路径根目录</label>
+                                                        <textarea id="vision-allowed-roots" rows="2" data-i18n="settingsBasic.visionAllowedRootsPlaceholder" data-i18n-attr="placeholder" placeholder="每行一个绝对路径，可选"></textarea>
+                                                    </div>
+                                                </div>
+                                            </details>
+                                            <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                                                <a href="javascript:void(0)" id="test-vision-btn" onclick="testVisionConnection()" style="font-size: 0.8125rem; color: var(--accent-color, #3182ce); text-decoration: none; cursor: pointer;" data-i18n="settingsBasic.testConnection">测试连接</a>
+                                                <span id="test-vision-result" style="font-size: 0.8125rem;"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- Agent配置 -->
                                 <div class="settings-subsection">
                                     <h4 data-i18n="settingsBasic.agentConfig">Agent 配置</h4>

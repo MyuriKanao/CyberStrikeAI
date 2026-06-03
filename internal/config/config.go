@@ -37,6 +37,7 @@ type Config struct {
 	AgentsDir   string                `yaml:"agents_dir,omitempty" json:"agents_dir,omitempty"` // 多代理子 Agent Markdown 定义目录（*.md，YAML front matter）
 	MultiAgent  MultiAgentConfig      `yaml:"multi_agent,omitempty" json:"multi_agent,omitempty"`
 	Project     ProjectConfig         `yaml:"project,omitempty" json:"project,omitempty"`
+	Vision      VisionConfig          `yaml:"vision,omitempty" json:"vision,omitempty"`
 }
 
 // ProjectConfig 项目黑板（跨对话共享事实）配置。

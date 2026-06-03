@@ -20,6 +20,9 @@ const (
 	ToolListKnowledgeRiskTypes = "list_knowledge_risk_types"
 	ToolSearchKnowledgeBase    = "search_knowledge_base"
 
+	// 视觉分析（本地图片 → VL 模型 → 文本摘要）
+	ToolAnalyzeImage = "analyze_image"
+
 	// WebShell 助手工具（AI 在 WebShell 管理 - AI 助手 中使用）
 	ToolWebshellExec      = "webshell_exec"
 	ToolWebshellFileList  = "webshell_file_list"
@@ -73,6 +76,7 @@ func IsBuiltinTool(toolName string) bool {
 		ToolRestoreProjectFact,
 		ToolListKnowledgeRiskTypes,
 		ToolSearchKnowledgeBase,
+		ToolAnalyzeImage,
 		ToolWebshellExec,
 		ToolWebshellFileList,
 		ToolWebshellFileRead,
@@ -124,6 +128,7 @@ func GetAllBuiltinTools() []string {
 		ToolRestoreProjectFact,
 		ToolListKnowledgeRiskTypes,
 		ToolSearchKnowledgeBase,
+		ToolAnalyzeImage,
 		ToolWebshellExec,
 		ToolWebshellFileList,
 		ToolWebshellFileRead,

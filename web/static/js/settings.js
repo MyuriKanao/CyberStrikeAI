@@ -197,6 +197,8 @@ async function loadConfig(loadTools = true) {
             orAllowEl.checked = orm.allow_client_reasoning !== false;
         }
 
+        fillVisionConfigFromCurrent(currentConfig.vision || {});
+
         // 填充FOFA配置
         const fofa = currentConfig.fofa || {};
         const fofaEmailEl = document.getElementById('fofa-email');
@@ -1104,6 +1106,14 @@ async function applySettings() {
             alert(msg);
             return;
         }
+
+        const visionPayload = collectVisionConfigFromForm();
+        if (visionPayload.enabled && !visionPayload.model) {
+            const vm = document.getElementById('vision-model');
+            if (vm) vm.classList.add('error');
+            alert((typeof window.t === 'function') ? window.t('settingsBasic.visionModelRequired') : '启用视觉分析时请填写视觉模型名称');
+            return;
+        }
         
         // 收集配置
         const knowledgeEnabledCheckbox = document.getElementById('knowledge-enabled');
@@ -1185,6 +1195,7 @@ async function applySettings() {
                     allow_client_reasoning: document.getElementById('openai-reasoning-allow-client')?.checked !== false
                 }
             },
+            vision: visionPayload,
             fofa: {
                 email: document.getElementById('fofa-email')?.value.trim() || '',
                 api_key: document.getElementById('fofa-api-key')?.value.trim() || '',
@@ -1377,6 +1388,117 @@ async function applySettings() {
             ? window.t('settings.apply.applyFailed')
             : '应用配置失败';
         alert(baseMsg + ': ' + error.message);
+    }
+}
+
+function fillVisionConfigFromCurrent(v) {
+    const en = document.getElementById('vision-enabled');
+    if (en) en.checked = v.enabled === true;
+    const prov = document.getElementById('vision-provider');
+    if (prov) prov.value = (v.provider || '').trim();
+    const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.value = val != null && val !== '' ? String(val) : '';
+    };
+    setVal('vision-api-key', v.api_key || '');
+    setVal('vision-base-url', v.base_url || '');
+    setVal('vision-model', v.model || '');
+    setVal('vision-max-image-bytes', v.max_image_bytes || 5242880);
+    setVal('vision-max-dimension', v.max_dimension || 2048);
+    setVal('vision-jpeg-quality', v.jpeg_quality || 82);
+    setVal('vision-max-payload-bytes', v.max_payload_bytes || 524288);
+    setVal('vision-skip-preprocess-bytes', v.skip_preprocess_below_bytes != null ? v.skip_preprocess_below_bytes : 2097152);
+    setVal('vision-timeout-seconds', v.timeout_seconds || 60);
+    const det = document.getElementById('vision-detail');
+    if (det) {
+        const d = (v.detail || 'low').toString().toLowerCase();
+        det.value = ['low', 'auto', 'high'].includes(d) ? d : 'low';
+    }
+    const rootsEl = document.getElementById('vision-allowed-roots');
+    if (rootsEl) {
+        const roots = Array.isArray(v.allowed_roots) ? v.allowed_roots : [];
+        rootsEl.value = roots.join('\n');
+    }
+    syncVisionFormEnabled();
+}
+
+function collectVisionConfigFromForm() {
+    const parseIntOr = (id, fallback) => {
+        const n = parseInt(document.getElementById(id)?.value, 10);
+        return Number.isNaN(n) ? fallback : n;
+    };
+    const rootsRaw = document.getElementById('vision-allowed-roots')?.value || '';
+    const allowed_roots = rootsRaw.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    const provider = document.getElementById('vision-provider')?.value.trim() || '';
+    return {
+        enabled: document.getElementById('vision-enabled')?.checked === true,
+        api_key: document.getElementById('vision-api-key')?.value.trim() || '',
+        base_url: document.getElementById('vision-base-url')?.value.trim() || '',
+        model: document.getElementById('vision-model')?.value.trim() || '',
+        provider: provider,
+        timeout_seconds: parseIntOr('vision-timeout-seconds', 60),
+        max_image_bytes: parseIntOr('vision-max-image-bytes', 5242880),
+        max_dimension: parseIntOr('vision-max-dimension', 2048),
+        jpeg_quality: parseIntOr('vision-jpeg-quality', 82),
+        max_payload_bytes: parseIntOr('vision-max-payload-bytes', 524288),
+        skip_preprocess_below_bytes: parseIntOr('vision-skip-preprocess-bytes', 2097152),
+        detail: document.getElementById('vision-detail')?.value || 'low',
+        allowed_roots: allowed_roots
+    };
+}
+
+function syncVisionFormEnabled() {
+    const enabled = document.getElementById('vision-enabled')?.checked === true;
+    const panel = document.getElementById('vision-fields-panel');
+    if (panel) {
+        panel.style.opacity = enabled ? '1' : '0.55';
+        panel.querySelectorAll('input, select, textarea, a').forEach(el => {
+            if (el.id === 'test-vision-btn') return;
+            el.disabled = !enabled;
+        });
+    }
+}
+
+async function testVisionConnection() {
+    const resultEl = document.getElementById('test-vision-result');
+    const vision = collectVisionConfigFromForm();
+    const openai = {
+        provider: document.getElementById('openai-provider')?.value || 'openai',
+        api_key: document.getElementById('openai-api-key')?.value.trim() || '',
+        base_url: document.getElementById('openai-base-url')?.value.trim() || '',
+        model: document.getElementById('openai-model')?.value.trim() || ''
+    };
+    const apiKey = vision.api_key || openai.api_key;
+    const model = vision.model;
+    if (!apiKey || !model) {
+        if (resultEl) {
+            resultEl.textContent = typeof window.t === 'function' ? window.t('settingsBasic.visionTestFillRequired') : '请填写视觉模型，并确保 API Key 可用';
+        }
+        return;
+    }
+    if (resultEl) {
+        resultEl.textContent = typeof window.t === 'function' ? window.t('settingsBasic.testing') : '测试中...';
+        resultEl.style.color = '';
+    }
+    try {
+        const response = await apiFetch('/api/config/test-vision', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vision: vision, openai: openai })
+        });
+        const result = await response.json();
+        if (result.success) {
+            const latency = result.latency_ms != null ? ` (${result.latency_ms}ms)` : '';
+            const modelInfo = result.model ? ` [${result.model}]` : '';
+            resultEl.textContent = (typeof window.t === 'function' ? window.t('settingsBasic.testSuccess') : '连接成功') + modelInfo + latency;
+            resultEl.style.color = 'var(--success-color, #38a169)';
+        } else {
+            resultEl.textContent = (typeof window.t === 'function' ? window.t('settingsBasic.testFailed') : '连接失败') + ': ' + (result.error || '未知错误');
+            resultEl.style.color = 'var(--error-color, #e53e3e)';
+        }
+    } catch (error) {
+        resultEl.textContent = (typeof window.t === 'function' ? window.t('settingsBasic.testError') : '测试出错') + ': ' + error.message;
+        resultEl.style.color = 'var(--error-color, #e53e3e)';
     }
 }
 
